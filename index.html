@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>府城走讀：專業教學紀錄與電子報系統</title>
+    
+    <!-- 引入 Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 引入 React, ReactDOM, 與 Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- 引入 Lucide 圖示庫 -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Noto+Serif+TC:wght@700;900&display=swap');
+        
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: #f8fafc; }
+        .font-serif { font-family: 'Noto Serif TC', serif; }
+        
+        /* 報紙樣式自定義 */
+        .newspaper-container {
+            column-gap: 2rem;
+            orphans: 1;
+            widows: 1;
+        }
+        .article-card {
+            break-inside: avoid;
+            margin-bottom: 2rem;
+        }
+
+        @media print {
+            .print\:hidden { display: none !important; }
+            body { background: white; padding: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        
+        // 解決圖示渲染問題的元件
+        const LucideIcon = ({ name, size = 20, className = "" }) => {
+            const ref = useRef(null);
+            useEffect(() => {
+                if (ref.current && window.lucide) {
+                    ref.current.innerHTML = "";
+                    const iconElement = window.lucide.createIcons({
+                        icons: { [name]: window.lucide.icons[name] },
+                        attrs: { width: size, height: size, class: className }
+                    });
+                }
+            }, [name, size, className]);
+            return <span ref={ref} className="inline-flex items-center justify-center"></span>;
+        };
+
+        // ==========================================
+        // 核心設定：地點、感官、感覺
+        // ==========================================
+        const DEFAULT_LOCATIONS = ['資源班', '南美館', '奇美博物館', '林百貨', '安平古堡', '台灣文學館', '文青麵店', '四草綠色隧道', '府中街', '臺灣銀行'];
+        const DEFAULT_TARGETS = ['抓面磚', '顛倒的布幣花磚', 'AI 點餐系統', '萬字紋或菊花', '十三溝面磚', '日本福神臉譜', '竹筍柱或迷宮柱頭', '神桌上的食物', '外國紙幣', '馬賽克桌面', '自己發現的其他東西'];
+
+        const SENSE_OPTIONS = [
+            { id: 'see', label: '我看到了', icon: 'Eye', color: 'bg-blue-500', textColor: 'text-blue-600', lightBg: 'bg-blue-50', meta: '長得像' },
+            { id: 'touch', label: '我摸到了', icon: 'Hand', color: 'bg-amber-500', textColor: 'text-amber-600', lightBg: 'bg-amber-50', meta: '摸起來像' },
+            { id: 'taste', label: '我吃到了', icon: 'Utensils', color: 'bg-red-500', textColor: 'text-red-600', lightBg: 'bg-red-50', meta: '吃起來像' },
+            { id: 'hear', label: '我聽到了', icon: 'Ear', color: 'bg-green-500', textColor: 'text-green-600', lightBg: 'bg-green-50', meta: '聽起來像' }
+        ];
+
+        const FEELINGS = {
+            positive: ['好漂亮', '好壯觀', '很有趣', '很驚喜', '想拍照', '很舒服', '很好吃', '有成就感'],
+            negative: ['很累', '好吵', '好熱', '腳痠', '太鹹了', '看不懂', '沒興趣', '太多看不完']
+        };
+
+        const apiKey = ""; // 執行環境自動注入
+
+        function App() {
+            // 視圖切換：'setup' (老師輸入文字稿), 'student' (學生紀錄), 'teacher' (資料管理), 'newsletter' (電子報)
+            const [view, setView] = useState('setup');
+            
+            // 課程/新聞稿數據 (預設帶入我們討論好的地點與項目，避免學生畫面空白)
+            const [userDraft, setUserDraft] = useState('');
+            const [polishedText, setPolishedText] = useState('');
+            const [locations, setLocations] = useState(DEFAULT_LOCATIONS);
+            const [targets, setTargets] = useState(DEFAULT_TARGETS);
+            const [isProcessing, setIsProcessing] = useState(false);
+
+            // 學生端狀態
+            const [mode, setMode] = useState('beginner'); // 'beginner' | 'advanced'
+            const [studentName, setStudentName] = useState('');
+            const [activeMic, setActiveMic] = useState(null);
+            
+            // 紀錄數據
+            const [records, setRecords] = useState([]);
+            const [tempBegData, setTempBegData] = useState({ see: '', touch: '', taste: '', hear: '', feelings: {} });
+            const [tempAdvRecords, setTempAdvRecords] = useState([{ id: Date.now(), location: '', target: '', sense: '', obs: '', meta: '', feelings: [] }]);
+
+            // 老師端與美編
+            const [selectedRecords, setSelectedRecords] = useState([]);
+            const [recordPhotos, setRecordPhotos] = useState({});
+            const [layoutIndex, setLayoutIndex] = useState(0);
+
+            const recognitionRef = useRef(null);
+
+            // ==========================================
+            // 1. AI 潤飾與提取邏輯
+            // ==========================================
+            const processDraft = async () => {
+                if (!userDraft.trim()) return;
+                setIsProcessing(true);
+                
+                const prompt = `你是一位專業的教育公關。請根據我提供的「走讀計畫草稿」進行以下處理：
+                1. 潤飾成一份通順感人的新聞稿。
+                2. 從計畫中「精確提取」我們預計會去的【地點】與要觀察的【物件項目】。
+                請務必以 JSON 格式回應：
+                {
+                    "polished": "潤飾後的新聞稿內容...",
+                    "locations": ["地點1", "地點2"...],
+                    "targets": ["物件1", "物件2"...]
+                }`;
+
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: userDraft }] }],
+                            systemInstruction: { parts: [{ text: prompt }] },
+                            generationConfig: { responseMimeType: "application/json" }
+                        })
+                    });
+                    const data = await response.json();
+                    const result = JSON.parse(data.candidates[0].content.parts[0].text);
+                    setPolishedText(result.polished);
+                    setLocations(result.locations);
+                    setTargets(result.targets);
+                } catch (e) {
+                    alert("潤飾失敗，請檢查網路或 API Key。");
+                } finally {
+                    setIsProcessing(false);
+                }
+            };
+
+            // ==========================================
+            // 2. 語音辨識邏輯
+            // ==========================================
+            useEffect(() => {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (SpeechRecognition) {
+                    const recognition = new SpeechRecognition();
+                    recognition.continuous = true;
+                    recognition.lang = 'zh-TW';
+                    recognition.onresult = (e) => {
+                        const transcript = e.results[e.results.length - 1][0].transcript;
+                        if (activeMic) {
+                            const [m, id, field] = activeMic.split('_');
+                            if (m === 'beg') {
+                                setTempBegData(prev => ({ ...prev, [id]: prev[id] + transcript }));
+                            } else {
+                                setTempAdvRecords(prev => prev.map(r => r.id.toString() === id ? { ...r, [field]: r[field] + transcript } : r));
+                            }
+                        }
+                    };
+                    recognition.onend = () => setActiveMic(null);
+                    recognitionRef.current = recognition;
+                }
+            }, [activeMic]);
+
+            const handleMic = (micKey) => {
+                if (activeMic === micKey) {
+                    recognitionRef.current?.stop();
+                    setActiveMic(null);
+                } else {
+                    if (activeMic) recognitionRef.current?.stop();
+                    setActiveMic(micKey);
+                    try { recognitionRef.current?.start(); } catch (e) {}
+                }
+            };
+
+            // ==========================================
+            // 3. 儲存與檔案生成
+            // ==========================================
+            const submitRecord = () => {
+                if (!studentName) return alert("請輸入班級與姓名");
+                const timestamp = new Date();
+                const dateCode = timestamp.toISOString().split('T')[0].replace(/-/g, '');
+                
+                let essay = `【作者：${studentName}】\n\n`;
+                if (mode === 'beginner') {
+                    SENSE_OPTIONS.forEach(s => {
+                        if (tempBegData[s.id]) {
+                            const feelings = tempBegData.feelings[s.id] || [];
+                            essay += `${s.label}「${tempBegData[s.id]}」，感覺「${feelings.join('、')}」。\n`;
+                        }
+                    });
+                } else {
+                    tempAdvRecords.forEach((r, idx) => {
+                        if (r.target) essay += `（發現 ${idx+1}）在「${r.location}」探索「${r.target}」。透過「${r.sense}」，發現了「${r.obs}」，覺得它「${r.meta}」，心情「${r.feelings.join('、')}」。\n\n`;
+                    });
+                }
+
+                const newRec = {
+                    id: Date.now().toString(),
+                    name: studentName,
+                    mode: mode,
+                    content: essay,
+                    fileName: `${dateCode}_${studentName}_${mode === 'beginner' ? '初階' : '進階'}.txt`,
+                    createdAt: timestamp.toLocaleString()
+                };
+
+                setRecords([newRec, ...records]);
+                setStudentName('');
+                setTempBegData({ see: '', touch: '', taste: '', hear: '', feelings: {} });
+                setTempAdvRecords([{ id: Date.now(), location: '', target: '', sense: '', obs: '', meta: '', feelings: [] }]);
+                alert("紀錄已成功送入老師資料庫！");
+                setView('student');
+            };
+
+            // ==========================================
+            // 4. 視圖：新聞稿與活動設定 (Setup)
+            // ==========================================
+            const SetupView = () => (
+                <div className="max-w-5xl mx-auto p-6">
+                    <header className="text-center mb-10">
+                        <h1 className="text-4xl font-black text-slate-800">府城走讀：全流程平台</h1>
+                        <p className="text-slate-500 mt-2">輸入文字稿 &rarr; 潤飾新聞稿 &rarr; 自動準備學生紀錄項目</p>
+                    </header>
+                    <div className="grid md:grid-cols-2 gap-8">
+                        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+                            <h2 className="text-xl font-bold mb-4 flex items-center"><LucideIcon name="FileText" className="mr-2 text-indigo-600"/> 第一步：輸入您的文字稿</h2>
+                            <textarea 
+                                value={userDraft} onChange={(e) => setUserDraft(e.target.value)}
+                                className="w-full h-80 bg-slate-50 border-2 rounded-2xl p-5 focus:border-indigo-500 outline-none transition-all"
+                                placeholder="請貼上您寫好的教學構想、計畫或走讀路徑文字..."
+                            />
+                            <button 
+                                onClick={processDraft} disabled={isProcessing || !userDraft}
+                                className="w-full mt-4 bg-indigo-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center hover:bg-indigo-700 disabled:bg-slate-300"
+                            >
+                                {isProcessing ? <LucideIcon name="RefreshCw" className="animate-spin mr-2"/> : <LucideIcon name="Sparkles" className="mr-2"/>}
+                                潤飾新聞稿並提取活動項目
+                            </button>
+                        </div>
+                        <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex flex-col">
+                            <h2 className="text-xl font-bold mb-4 flex items-center"><LucideIcon name="Newspaper" className="mr-2 text-emerald-600"/> 潤飾結果與預覽</h2>
+                            <div className="bg-emerald-50 p-5 rounded-2xl flex-grow overflow-y-auto max-h-[300px] mb-6 italic text-slate-700 leading-relaxed">
+                                {polishedText || "尚未處理文字稿..."}
+                            </div>
+                            {locations.length > 0 && (
+                                <div className="space-y-4">
+                                    <div className="bg-slate-50 p-4 rounded-xl">
+                                        <p className="text-xs font-bold text-slate-400 uppercase mb-2">自動提取的地點與項目</p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {locations.map(l => <span key={l} className="bg-white border px-2 py-1 rounded text-xs">📍 {l}</span>)}
+                                            {targets.map(t => <span key={t} className="bg-white border px-2 py-1 rounded text-xs text-indigo-600 font-bold">🔍 {t}</span>)}
+                                        </div>
+                                    </div>
+                                    <button onClick={() => setView('student')} className="w-full bg-slate-800 text-white py-4 rounded-2xl font-bold flex items-center justify-center hover:bg-slate-900 shadow-xl">
+                                        啟動學生紀錄畫面 <LucideIcon name="Send" className="ml-2"/>
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    
+                    {/* 永久可見的快速導覽按鈕列 */}
+                    <div className="mt-10 pt-8 border-t border-slate-200 flex flex-col items-center">
+                        <p className="text-sm font-bold text-slate-400 mb-4">或者您可以略過設定，直接切換畫面：</p>
+                        <div className="flex flex-wrap justify-center gap-4">
+                            <button onClick={() => setView('student')} className="bg-white border-2 border-indigo-200 text-indigo-600 px-6 py-3 rounded-xl font-bold hover:bg-indigo-50 transition-all shadow-sm flex items-center">
+                                <LucideIcon name="Compass" className="mr-2" size={18} /> 直接進入學生紀錄 (初階/進階版)
+                            </button>
+                            <button onClick={() => setView('teacher')} className="bg-white border-2 border-slate-200 text-slate-600 px-6 py-3 rounded-xl font-bold hover:bg-slate-50 transition-all shadow-sm flex items-center">
+                                <LucideIcon name="Database" className="mr-2" size={18} /> 進入老師資料庫
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+
+            // ==========================================
+            // 5. 視圖：學生紀錄 (Student)
+            // ==========================================
+            const StudentView = () => (
+                <div className="max-w-4xl mx-auto p-4 pb-32">
+                    <div className="flex justify-between items-center mb-6 px-2">
+                        <button onClick={() => setView('setup')} className="bg-white p-2 rounded-lg border shadow-sm text-slate-400 hover:text-indigo-600"><LucideIcon name="ArrowLeft"/></button>
+                        <button onClick={() => setView('teacher')} className="bg-white px-4 py-2 rounded-lg border shadow-sm font-bold text-sm text-slate-600 hover:text-indigo-600">老師後台</button>
+                    </div>
+
+                    <header className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 text-center relative overflow-hidden mb-8">
+                        <div className="absolute top-0 right-0 p-8 opacity-5"><LucideIcon name="Compass" size={120}/></div>
+                        <h1 className="text-3xl font-black text-slate-800 mb-6">府城走讀：感官紀錄</h1>
+                        
+                        <div className="flex justify-center mb-6">
+                            <div className="bg-slate-100 p-1.5 rounded-full inline-flex border border-slate-200">
+                                <button onClick={() => setMode('beginner')} className={`px-8 py-2.5 rounded-full font-bold transition-all ${mode === 'beginner' ? 'bg-white text-emerald-600 shadow-md transform scale-105' : 'text-slate-500'}`}>初階版</button>
+                                <button onClick={() => setMode('advanced')} className={`px-8 py-2.5 rounded-full font-bold transition-all ${mode === 'advanced' ? 'bg-indigo-600 text-white shadow-md transform scale-105' : 'text-slate-500'}`}>進階版</button>
+                            </div>
+                        </div>
+
+                        <input 
+                            type="text" value={studentName} onChange={(e) => setStudentName(e.target.value)}
+                            className="w-full max-w-sm bg-slate-50 border-2 rounded-2xl p-4 text-center text-lg font-black focus:border-indigo-500 outline-none"
+                            placeholder="請輸入班級與姓名 (例: 四甲 王小明)"
+                        />
+                    </header>
+
+                    {mode === 'beginner' ? (
+                        <div className="space-y-6">
+                            {SENSE_OPTIONS.map(s => (
+                                <div key={s.id} className="bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row overflow-hidden">
+                                    <div className="md:w-1/2 p-6 border-b md:border-b-0 md:border-r border-slate-100">
+                                        <div className="flex items-center mb-4">
+                                            <div className={`${s.lightBg} p-2 rounded-full mr-3`}><LucideIcon name={s.icon} className={s.textColor}/></div>
+                                            <h3 className={`text-xl font-bold ${s.textColor}`}>{s.label}</h3>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <textarea 
+                                                value={tempBegData[s.id]} onChange={(e) => setTempBegData({...tempBegData, [s.id]: e.target.value})}
+                                                className="w-full h-24 bg-slate-50 rounded-xl p-3 outline-none focus:ring-2 ring-indigo-200"
+                                                placeholder="打字或點右邊錄音..."
+                                            />
+                                            <button onClick={() => handleMic(`beg_${s.id}`)} className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 shadow-lg ${activeMic === `beg_${s.id}` ? 'bg-red-500 animate-pulse' : 'bg-slate-200 text-slate-500'}`}>
+                                                <LucideIcon name="Mic"/>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="md:w-1/2 p-6 bg-slate-50/50">
+                                        <p className="text-xs font-bold text-slate-400 mb-3">我的感覺：</p>
+                                        <div className="flex flex-wrap gap-2">
+                                            {[...FEELINGS.positive, ...FEELINGS.negative].map(f => {
+                                                const isSel = (tempBegData.feelings[s.id] || []).includes(f);
+                                                return <button key={f} onClick={() => {
+                                                    const current = tempBegData.feelings[s.id] || [];
+                                                    const next = isSel ? current.filter(x => x !== f) : [...current, f];
+                                                    setTempBegData({ ...tempBegData, feelings: { ...tempBegData.feelings, [s.id]: next }});
+                                                }} className={`px-3 py-1.5 rounded-lg text-sm font-bold border transition-all ${isSel ? 'bg-pink-100 border-pink-400 text-pink-700' : 'bg-white text-slate-500'}`}>{f}</button>
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="space-y-8">
+                            {tempAdvRecords.map((rec, idx) => (
+                                <div key={rec.id} className="bg-white rounded-3xl border-2 border-slate-200 p-8 shadow-md relative">
+                                    {tempAdvRecords.length > 1 && <button onClick={() => setTempAdvRecords(tempAdvRecords.filter(x => x.id !== rec.id))} className="absolute top-6 right-6 text-slate-300 hover:text-red-500"><LucideIcon name="Trash2"/></button>}
+                                    <div className="space-y-8">
+                                        <div><p className="font-bold mb-3 flex items-center text-slate-700"><span className="bg-indigo-600 text-white w-6 h-6 rounded-full inline-flex items-center justify-center mr-2 text-xs">1</span> 選擇地點：</p>
+                                            <div className="flex flex-wrap gap-2">{locations.map(l => <button key={l} onClick={() => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, location: l} : x))} className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${rec.location === l ? 'bg-indigo-600 text-white border-transparent' : 'bg-white text-slate-500 border-slate-200'}`}>{l}</button>)}</div>
+                                        </div>
+                                        <div><p className="font-bold mb-3 flex items-center text-slate-700"><span className="bg-indigo-600 text-white w-6 h-6 rounded-full inline-flex items-center justify-center mr-2 text-xs">2</span> 探索項目：</p>
+                                            <div className="flex flex-wrap gap-2">{targets.map(t => <button key={t} onClick={() => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, target: t} : x))} className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${rec.target === t ? 'bg-emerald-600 text-white border-transparent' : 'bg-white text-slate-500 border-slate-200'}`}>{t}</button>)}</div>
+                                        </div>
+                                        <div><p className="font-bold mb-3 flex items-center text-slate-700"><span className="bg-indigo-600 text-white w-6 h-6 rounded-full inline-flex items-center justify-center mr-2 text-xs">3</span> 觀察方式：</p>
+                                            <div className="grid grid-cols-4 gap-3">{SENSE_OPTIONS.map(s => <button key={s.id} onClick={() => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, sense: s.label} : x))} className={`p-4 rounded-2xl border flex flex-col items-center transition-all ${rec.sense === s.label ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-100 text-slate-300 hover:border-slate-300'}`}><LucideIcon name={s.icon} size={28}/><span className="text-[10px] mt-2 font-bold">{s.label}</span></button>)}</div>
+                                        </div>
+                                        {rec.sense && (
+                                            <div className="p-6 bg-slate-50 rounded-3xl space-y-6 border border-slate-100">
+                                                <div><p className="text-sm font-bold text-slate-500 mb-2">具體發現：</p>
+                                                    <div className="flex gap-2"><textarea value={rec.obs} onChange={(e) => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, obs: e.target.value} : x))} className="w-full h-20 p-4 rounded-2xl border-none outline-none focus:ring-2 ring-indigo-200 shadow-inner" placeholder="發現了什麼細節？"/><button onClick={() => handleMic(`adv_${rec.id}_obs`)} className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${activeMic === `adv_${rec.id}_obs` ? 'bg-red-500 animate-pulse' : 'bg-white text-slate-400'}`}><LucideIcon name="Mic"/></button></div>
+                                                </div>
+                                                <div><p className="text-sm font-bold text-slate-500 mb-2">聯想比喻：</p>
+                                                    <div className="flex gap-2"><textarea value={rec.meta} onChange={(e) => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, meta: e.target.value} : x))} className="w-full h-12 p-3 rounded-2xl border-none outline-none focus:ring-2 ring-indigo-200 shadow-inner" placeholder="它長得像什麼？或是感覺像？"/><button onClick={() => handleMic(`adv_${rec.id}_meta`)} className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${activeMic === `adv_${rec.id}_meta` ? 'bg-red-500 animate-pulse' : 'bg-white text-slate-400'}`}><LucideIcon name="Mic"/></button></div>
+                                                </div>
+                                                <div><p className="text-sm font-bold text-slate-500 mb-2">我的感覺：</p>
+                                                    <div className="flex flex-wrap gap-2">{[...FEELINGS.positive].map(f => {
+                                                        const isSel = rec.feelings.includes(f);
+                                                        return <button key={f} onClick={() => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, feelings: isSel ? x.feelings.filter(y => y !== f) : [...x.feelings, f]} : x))} className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${isSel ? 'bg-indigo-600 text-white border-transparent' : 'bg-white text-slate-400'}`}>{f}</button>
+                                                    })}</div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                            <button onClick={() => setTempAdvRecords([...tempAdvRecords, { id: Date.now(), location: locations[0], target: '', sense: '', obs: '', meta: '', feelings: [] }])} className="w-full py-4 border-2 border-dashed border-slate-300 rounded-3xl text-slate-400 font-bold hover:bg-white transition-all">+ 新增下一個觀察發現</button>
+                        </div>
+                    )}
+                    
+                    <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t border-slate-200 flex justify-center z-50">
+                        <button onClick={submitRecord} className="max-w-4xl w-full bg-indigo-600 text-white font-black py-4 px-6 rounded-2xl shadow-xl hover:bg-indigo-700 flex items-center justify-center text-xl active:scale-95">
+                            <LucideIcon name="Save" className="mr-2"/> 完成紀錄並送出
+                        </button>
+                    </div>
+                </div>
+            );
+
+            // ==========================================
+            // 6. 視圖：老師管理與電子報 (Teacher/Newsletter)
+            // ==========================================
+            const TeacherView = () => (
+                <div className="max-w-6xl mx-auto p-8 pb-32">
+                    <div className="flex justify-between items-center mb-8 bg-white p-6 rounded-3xl shadow-sm border">
+                        <div className="flex items-center"><LucideIcon name="Database" size={32} className="text-indigo-600 mr-4"/><div><h1 className="text-2xl font-black">老師資料庫管理</h1><p className="text-slate-400 text-sm">整理學生的作品集與排版輸出</p></div></div>
+                        <div className="flex gap-3">
+                            <button onClick={() => setView('setup')} className="px-4 py-2 rounded-xl border font-bold text-slate-400">重設活動</button>
+                            <button onClick={() => setView('student')} className="px-4 py-2 rounded-xl bg-slate-800 text-white font-bold">返回紀錄端</button>
+                            <button onClick={() => setView('newsletter')} disabled={selectedRecords.length === 0} className="px-6 py-2 rounded-xl bg-indigo-600 text-white font-black disabled:bg-slate-200">生成電子報 ({selectedRecords.length})</button>
+                        </div>
+                    </div>
+                    <div className="bg-white rounded-3xl shadow-sm border overflow-hidden">
+                        <table className="w-full text-left">
+                            <thead className="bg-slate-50 text-slate-400 text-xs font-bold border-b">
+                                <tr><th className="p-4 w-12 text-center">選入</th><th className="p-4">姓名 / 檔案</th><th className="p-4">加入照片 (老師輔助)</th><th className="p-4">內容摘要</th></tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {records.map(rec => (
+                                    <tr key={rec.id} className="hover:bg-slate-50 transition-colors">
+                                        <td className="p-4 text-center">
+                                            <input type="checkbox" checked={selectedRecords.includes(rec.id)} onChange={(e) => e.target.checked ? setSelectedRecords([...selectedRecords, rec.id]) : setSelectedRecords(selectedRecords.filter(id => id !== rec.id))} className="w-5 h-5 accent-indigo-600" />
+                                        </td>
+                                        <td className="p-4">
+                                            <p className="font-bold text-slate-800 text-base">{rec.name}</p>
+                                            <p className="text-[10px] text-slate-400 font-mono tracking-tighter">{rec.fileName}</p>
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="flex gap-2 items-center">
+                                                {(recordPhotos[rec.id] || []).map(p => (
+                                                    <div key={p.id} className="relative w-12 h-12 group">
+                                                        <img src={p.url} className={`w-full h-full object-cover rounded border-2 ${p.selected ? 'border-indigo-500' : 'opacity-30'}`} onClick={() => setRecordPhotos({...recordPhotos, [rec.id]: recordPhotos[rec.id].map(x => x.id === p.id ? {...x, selected: !x.selected} : x)})}/>
+                                                        <button onClick={() => setRecordPhotos({...recordPhotos, [rec.id]: recordPhotos[rec.id].filter(x => x.id !== p.id)})} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 hidden group-hover:block"><LucideIcon name="X" size={8}/></button>
+                                                    </div>
+                                                ))}
+                                                <label className="w-12 h-12 flex items-center justify-center border-2 border-dashed border-slate-300 rounded cursor-pointer hover:bg-white text-slate-300 transition-all">
+                                                    <LucideIcon name="ImagePlus" size={20}/>
+                                                    <input type="file" hidden multiple accept="image/*" onChange={(e) => {
+                                                        const files = Array.from(e.target.files);
+                                                        files.forEach(f => {
+                                                            const reader = new FileReader();
+                                                            reader.onload = (ev) => setRecordPhotos(prev => ({...prev, [rec.id]: [...(prev[rec.id] || []), {id: Date.now()+Math.random(), url: ev.target.result, selected: true}]}));
+                                                            reader.readAsDataURL(f);
+                                                        });
+                                                    }}/>
+                                                </label>
+                                            </div>
+                                        </td>
+                                        <td className="p-4 text-xs text-slate-400 truncate max-w-[200px] italic">{rec.content}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                        {records.length === 0 && <div className="p-20 text-center text-slate-300 italic">目前尚未有學生送出紀錄喔</div>}
+                    </div>
+                </div>
+            );
+
+            const NewsletterView = () => {
+                const articles = records.filter(r => selectedRecords.includes(r.id));
+                return (
+                    <div className="min-h-screen bg-stone-100 p-4 md:p-12 font-serif">
+                        <div className="max-w-6xl mx-auto">
+                            <div className="flex justify-between items-center mb-10 print:hidden">
+                                <button onClick={() => setView('teacher')} className="bg-white px-6 py-2 rounded-xl flex items-center font-sans shadow-md hover:bg-slate-50 transition-all"><LucideIcon name="ArrowLeft" className="mr-2"/> 返回資料庫</button>
+                                <div className="flex gap-3">
+                                    <button onClick={() => setLayoutIndex((layoutIndex + 1) % 3)} className="bg-amber-500 text-white px-6 py-2 rounded-xl flex items-center font-sans shadow-md hover:bg-amber-600 transition-all"><LucideIcon name="RefreshCw" className="mr-2"/> 🔄 重整版面 (變換樣式)</button>
+                                    <button onClick={() => window.print()} className="bg-indigo-600 text-white px-6 py-2 rounded-xl flex items-center font-sans shadow-md hover:bg-indigo-700 transition-all"><LucideIcon name="Printer" className="mr-2"/> 列印 / 下載 PDF</button>
+                                </div>
+                            </div>
+                            
+                            <div className="bg-white p-8 md:p-16 shadow-2xl border border-stone-300 print:shadow-none print:p-0">
+                                <div className="border-b-8 border-double border-black text-center pb-8 mb-12">
+                                    <h1 className="text-6xl font-black mb-3">走讀小偵探特刊</h1>
+                                    <p className="text-xl text-stone-600 uppercase tracking-[0.4em] font-sans">Special Cultural Edition • {new Date().toLocaleDateString()}</p>
+                                </div>
+
+                                <div className={`newspaper-container ${layoutIndex === 0 ? 'columns-1 md:columns-2' : layoutIndex === 1 ? 'flex flex-col gap-12' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'}`}>
+                                    {articles.map((art, idx) => {
+                                        const photos = (recordPhotos[art.id] || []).filter(p => p.selected);
+                                        const isFeatured = layoutIndex === 2 && idx === 0;
+                                        return (
+                                            <div key={art.id} className={`article-card p-6 bg-stone-50 border-t-4 border-stone-800 shadow-sm relative ${isFeatured ? 'md:col-span-full bg-white border-l-8 border-t-0 border-indigo-900 shadow-xl' : ''}`}>
+                                                <div className={`absolute top-0 left-0 w-full h-1 ${art.mode === 'beginner' ? 'bg-emerald-600' : 'bg-indigo-800'}`}></div>
+                                                <h3 className={`${isFeatured ? 'text-4xl' : 'text-2xl'} font-black mb-4 leading-tight`}>【{art.name}】的感官發現</h3>
+                                                {photos.length > 0 && (
+                                                    <div className={`mb-6 flex flex-wrap gap-2 ${isFeatured ? 'justify-center' : ''}`}>
+                                                        {photos.map(p => <img key={p.id} src={p.url} className={`${isFeatured ? 'h-80 w-auto' : 'h-40 w-full'} object-cover rounded border-2 border-white shadow-md`}/>)}
+                                                    </div>
+                                                )}
+                                                <p className={`text-stone-800 leading-relaxed font-sans ${isFeatured ? 'text-xl' : 'text-base'} whitespace-pre-wrap`}>
+                                                    {art.content.split('\n\n').slice(1).join('\n\n')}
+                                                </p>
+                                                <div className="mt-4 pt-4 border-t border-stone-200 flex justify-between items-center italic text-[10px] text-stone-400">
+                                                    <span>版別：{art.mode === 'beginner' ? '初階版' : '深度進階版'}</span>
+                                                    <span>編碼：{art.fileName}</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            // ==========================================
+            // 主渲染區
+            // ==========================================
+            if (view === 'setup') return <SetupView />;
+            if (view === 'student') return <StudentView />;
+            if (view === 'teacher') return <TeacherView />;
+            if (view === 'newsletter') return <NewsletterView />;
+            
+            return null;
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
