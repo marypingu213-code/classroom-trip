@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>戶外教學：專業教學紀錄與電子報系統</title>
+    <title>府城走讀：專業教學紀錄與電子報系統</title>
     
     <!-- 引入 Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -45,26 +45,18 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
         
-        // 修復：完美整合 Lucide 圖示與 React 虛擬 DOM 的元件
+        // 解決圖示渲染問題的元件
         const LucideIcon = ({ name, size = 20, className = "" }) => {
             const containerRef = useRef(null);
 
             useEffect(() => {
                 if (containerRef.current && window.lucide && window.lucide.icons[name]) {
-                    // 建立一個暫時的 i 標籤
                     containerRef.current.innerHTML = `<i data-custom-icon="${name}"></i>`;
-                    // 讓 Lucide 針對這個標籤進行精準替換，避免與 React 衝突
                     window.lucide.createIcons({
                         root: containerRef.current,
                         nameAttr: 'data-custom-icon',
-                        icons: {
-                            [name]: window.lucide.icons[name]
-                        },
-                        attrs: {
-                            width: size,
-                            height: size,
-                            class: className
-                        }
+                        icons: { [name]: window.lucide.icons[name] },
+                        attrs: { width: size, height: size, class: className }
                     });
                 }
             }, [name, size, className]);
@@ -73,7 +65,7 @@
         };
 
         // ==========================================
-        // 核心設定：地點、感官、感覺
+        // 核心設定：地點、感官、15項專屬感覺詞彙
         // ==========================================
         const DEFAULT_LOCATIONS = ['資源班', '南美館', '奇美博物館', '林百貨', '安平古堡', '台灣文學館', '文青麵店', '四草綠色隧道', '府中街', '臺灣銀行'];
         const DEFAULT_TARGETS = ['抓面磚', '顛倒的布幣花磚', 'AI 點餐系統', '萬字紋或菊花', '十三溝面磚', '日本福神臉譜', '竹筍柱或迷宮柱頭', '神桌上的食物', '外國紙幣', '馬賽克桌面', '自己發現的其他東西'];
@@ -85,18 +77,37 @@
             { id: 'hear', label: '我聽到了', icon: 'Ear', color: 'bg-green-500', textColor: 'text-green-600', lightBg: 'bg-green-50', meta: '聽起來像' }
         ];
 
+        // 依照圖表更新為各 15 項 (3排x5列)
         const FEELINGS = {
-            positive: ['好漂亮', '好壯觀', '很有趣', '很驚喜', '想拍照', '很舒服', '很好吃', '有成就感'],
-            negative: ['很累', '好吵', '好熱', '腳痠', '太鹹了', '看不懂', '沒興趣', '太多看不完']
+            see: [
+                '好漂亮', '好壯觀', '很特別', '亮亮的', '暗暗的',
+                '看不懂', '太複雜', '太多看不完', '眼花撩亂', '很普通',
+                '很有趣', '很驚喜', '有成就感', '想拍照', '沒興趣'
+            ],
+            touch: [
+                '軟綿綿', '硬硬的', '刺刺的', '粗粗的', '滑滑的',
+                '冰冰的', '熱熱的', '濕濕的', '黏黏的', '刺痛感',
+                '很有趣', '很驚喜', '很舒服', '想再摸一次', '沒興趣'
+            ],
+            taste: [
+                '甜甜的', '酸酸的', '辣辣的', '太鹹了', '苦苦的',
+                '脆脆的', 'QQ的', '軟爛的', '香香的', '冰涼的',
+                '很好吃', '沒味道', '想再吃', '很驚喜', '不想吃了'
+            ],
+            hear: [
+                '好好聽', '很輕快', '很溫柔', '很有節奏', '聽不懂',
+                '好吵/太大聲', '太小聲', '好刺耳', '怪聲音', '很混亂',
+                '很開心', '被嚇到', '想跟著跳', '很舒服', '沒興趣'
+            ]
         };
 
         const apiKey = ""; // 執行環境自動注入
 
         function App() {
-            // 視圖切換：'setup' (老師輸入文字稿), 'student' (學生紀錄), 'teacher' (資料管理), 'newsletter' (電子報)
+            // 視圖切換
             const [view, setView] = useState('setup');
             
-            // 課程/新聞稿數據 (預設帶入我們討論好的地點與項目，避免學生畫面空白)
+            // 課程/新聞稿數據
             const [userDraft, setUserDraft] = useState('');
             const [polishedText, setPolishedText] = useState('');
             const [locations, setLocations] = useState(DEFAULT_LOCATIONS);
@@ -104,9 +115,12 @@
             const [isProcessing, setIsProcessing] = useState(false);
 
             // 學生端狀態
-            const [mode, setMode] = useState('beginner'); // 'beginner' | 'advanced'
+            const [mode, setMode] = useState('beginner');
             const [studentName, setStudentName] = useState('');
             const [activeMic, setActiveMic] = useState(null);
+            
+            // 語音唸讀與鎖定機制狀態
+            const [focusedFeeling, setFocusedFeeling] = useState(null);
             
             // 紀錄數據
             const [records, setRecords] = useState([]);
@@ -121,7 +135,21 @@
             const recognitionRef = useRef(null);
 
             // ==========================================
-            // 1. AI 潤飾與提取邏輯
+            // TTS 語音合成 (點選時發音)
+            // ==========================================
+            const speakText = (text) => {
+                if ('speechSynthesis' in window) {
+                    window.speechSynthesis.cancel(); // 中斷前一次發音
+                    let textToSpeak = text.replace('/', '，或者'); // 處理「好吵/太大聲」的唸法
+                    const utterance = new SpeechSynthesisUtterance(textToSpeak);
+                    utterance.lang = 'zh-TW';
+                    utterance.rate = 0.85; // 稍微放慢語速，適合資源班學生
+                    window.speechSynthesis.speak(utterance);
+                }
+            };
+
+            // ==========================================
+            // AI 潤飾與提取邏輯
             // ==========================================
             const processDraft = async () => {
                 if (!userDraft.trim()) return;
@@ -160,7 +188,7 @@
             };
 
             // ==========================================
-            // 2. 語音辨識邏輯
+            // 語音輸入 (麥克風) 邏輯
             // ==========================================
             useEffect(() => {
                 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -196,8 +224,12 @@
             };
 
             // ==========================================
-            // 3. 儲存與檔案生成
+            // 儲存與檔案生成
             // ==========================================
+            const [generatedEssay, setGeneratedEssay] = useState('');
+            const [generatedFileName, setGeneratedFileName] = useState('');
+            const [showModal, setShowModal] = useState(false);
+
             const submitRecord = () => {
                 if (!studentName) return alert("請輸入班級與姓名");
                 const timestamp = new Date();
@@ -217,27 +249,35 @@
                     });
                 }
 
+                setGeneratedEssay(essay);
+                setGeneratedFileName(`${dateCode}_${studentName}_${mode === 'beginner' ? '初階' : '進階'}.txt`);
+                setShowModal(true);
+            };
+
+            const confirmSave = () => {
                 const newRec = {
                     id: Date.now().toString(),
                     name: studentName,
                     mode: mode,
-                    content: essay,
-                    fileName: `${dateCode}_${studentName}_${mode === 'beginner' ? '初階' : '進階'}.txt`,
-                    createdAt: timestamp.toLocaleString()
+                    content: generatedEssay,
+                    fileName: generatedFileName,
+                    createdAt: new Date().toLocaleString()
                 };
 
                 setRecords([newRec, ...records]);
                 setStudentName('');
                 setTempBegData({ see: '', touch: '', taste: '', hear: '', feelings: {} });
                 setTempAdvRecords([{ id: Date.now(), location: '', target: '', sense: '', obs: '', meta: '', feelings: [] }]);
+                setFocusedFeeling(null);
                 alert("紀錄已成功送入老師資料庫！");
+                setShowModal(false);
                 setView('student');
             };
 
             // ==========================================
-            // 4. 視圖：新聞稿與活動設定 (Setup)
+            // 渲染視圖：新聞稿與活動設定 (Setup)
             // ==========================================
-            const SetupView = () => (
+            const renderSetupView = () => (
                 <div className="max-w-5xl mx-auto p-6">
                     <header className="text-center mb-10">
                         <h1 className="text-4xl font-black text-slate-800">府城走讀：全流程平台</h1>
@@ -281,7 +321,6 @@
                         </div>
                     </div>
                     
-                    {/* 永久可見的快速導覽按鈕列 */}
                     <div className="mt-10 pt-8 border-t border-slate-200 flex flex-col items-center">
                         <p className="text-sm font-bold text-slate-400 mb-4">或者您可以略過設定，直接切換畫面：</p>
                         <div className="flex flex-wrap justify-center gap-4">
@@ -297,9 +336,9 @@
             );
 
             // ==========================================
-            // 5. 視圖：學生紀錄 (Student)
+            // 5. 渲染視圖：學生紀錄 (Student)
             // ==========================================
-            const StudentView = () => (
+            const renderStudentView = () => (
                 <div className="max-w-4xl mx-auto p-4 pb-32">
                     <div className="flex justify-between items-center mb-6 px-2">
                         <button onClick={() => setView('setup')} className="bg-white p-2 rounded-lg border shadow-sm text-slate-400 hover:text-indigo-600"><LucideIcon name="ArrowLeft"/></button>
@@ -312,8 +351,8 @@
                         
                         <div className="flex justify-center mb-6">
                             <div className="bg-slate-100 p-1.5 rounded-full inline-flex border border-slate-200 z-10 relative">
-                                <button onClick={() => setMode('beginner')} className={`px-8 py-2.5 rounded-full font-bold transition-all ${mode === 'beginner' ? 'bg-white text-emerald-600 shadow-md transform scale-105' : 'text-slate-500'}`}>初階版</button>
-                                <button onClick={() => setMode('advanced')} className={`px-8 py-2.5 rounded-full font-bold transition-all ${mode === 'advanced' ? 'bg-indigo-600 text-white shadow-md transform scale-105' : 'text-slate-500'}`}>進階版</button>
+                                <button onClick={() => {setMode('beginner'); setFocusedFeeling(null);}} className={`px-8 py-2.5 rounded-full font-bold transition-all ${mode === 'beginner' ? 'bg-white text-emerald-600 shadow-md transform scale-105' : 'text-slate-500'}`}>初階版</button>
+                                <button onClick={() => {setMode('advanced'); setFocusedFeeling(null);}} className={`px-8 py-2.5 rounded-full font-bold transition-all ${mode === 'advanced' ? 'bg-indigo-600 text-white shadow-md transform scale-105' : 'text-slate-500'}`}>進階版</button>
                             </div>
                         </div>
 
@@ -345,15 +384,44 @@
                                         </div>
                                     </div>
                                     <div className="md:w-1/2 p-6 bg-slate-50/50">
-                                        <p className="text-xs font-bold text-slate-400 mb-3">我的感覺：</p>
-                                        <div className="flex flex-wrap gap-2">
-                                            {[...FEELINGS.positive, ...FEELINGS.negative].map(f => {
+                                        <div className="flex justify-between items-center mb-4">
+                                            <p className="text-xs font-bold text-slate-400">我的感覺：</p>
+                                            <span className="text-[10px] font-bold text-blue-600 bg-blue-100 px-2 py-1 rounded-full flex items-center">
+                                                <LucideIcon name="Volume2" size={12} className="mr-1"/> 點1下唸讀，點2下鎖定
+                                            </span>
+                                        </div>
+                                        {/* 以 3排 x 5列 的格線系統排列 */}
+                                        <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+                                            {FEELINGS[s.id].map(f => {
                                                 const isSel = (tempBegData.feelings[s.id] || []).includes(f);
-                                                return <button key={f} onClick={() => {
-                                                    const current = tempBegData.feelings[s.id] || [];
-                                                    const next = isSel ? current.filter(x => x !== f) : [...current, f];
-                                                    setTempBegData({ ...tempBegData, feelings: { ...tempBegData.feelings, [s.id]: next }});
-                                                }} className={`px-3 py-1.5 rounded-lg text-sm font-bold border transition-all ${isSel ? 'bg-pink-100 border-pink-400 text-pink-700' : 'bg-white text-slate-500'}`}>{f}</button>
+                                                const tapId = `beg_${s.id}_${f}`;
+                                                const isFocused = focusedFeeling === tapId;
+
+                                                return (
+                                                    <button 
+                                                        key={f} 
+                                                        onClick={() => {
+                                                            if (isFocused) {
+                                                                // 點兩下：切換鎖定狀態並移除 Focus
+                                                                const current = tempBegData.feelings[s.id] || [];
+                                                                const next = isSel ? current.filter(x => x !== f) : [...current, f];
+                                                                setTempBegData({ ...tempBegData, feelings: { ...tempBegData.feelings, [s.id]: next }});
+                                                                setFocusedFeeling(null);
+                                                            } else {
+                                                                // 點第一下：發聲並標示為 Focus
+                                                                speakText(f);
+                                                                setFocusedFeeling(tapId);
+                                                            }
+                                                        }} 
+                                                        className={`px-1 py-2 rounded-xl text-xs font-bold border transition-all relative flex items-center justify-center min-h-[44px] text-center
+                                                            ${isSel ? 'bg-emerald-500 text-white border-transparent shadow-md' : 
+                                                              isFocused ? 'bg-blue-50 border-blue-400 text-blue-700 ring-2 ring-blue-300' : 
+                                                              'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+                                                    >
+                                                        {isFocused && !isSel && <div className="absolute -top-2 -right-2 bg-blue-500 text-white rounded-full p-1 shadow-sm"><LucideIcon name="Volume2" size={10}/></div>}
+                                                        {f}
+                                                    </button>
+                                                )
                                             })}
                                         </div>
                                     </div>
@@ -362,54 +430,102 @@
                         </div>
                     ) : (
                         <div className="space-y-8">
-                            {tempAdvRecords.map((rec, idx) => (
-                                <div key={rec.id} className="bg-white rounded-3xl border-2 border-slate-200 p-8 shadow-md relative">
-                                    {tempAdvRecords.length > 1 && <button onClick={() => setTempAdvRecords(tempAdvRecords.filter(x => x.id !== rec.id))} className="absolute top-6 right-6 text-slate-300 hover:text-red-500"><LucideIcon name="Trash2"/></button>}
-                                    <div className="space-y-8">
-                                        <div><p className="font-bold mb-3 flex items-center text-slate-700"><span className="bg-indigo-600 text-white w-6 h-6 rounded-full inline-flex items-center justify-center mr-2 text-xs">1</span> 選擇地點：</p>
-                                            <div className="flex flex-wrap gap-2">{locations.map(l => <button key={l} onClick={() => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, location: l} : x))} className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${rec.location === l ? 'bg-indigo-600 text-white border-transparent' : 'bg-white text-slate-500 border-slate-200'}`}>{l}</button>)}</div>
-                                        </div>
-                                        <div><p className="font-bold mb-3 flex items-center text-slate-700"><span className="bg-indigo-600 text-white w-6 h-6 rounded-full inline-flex items-center justify-center mr-2 text-xs">2</span> 探索項目：</p>
-                                            <div className="flex flex-wrap gap-2">{targets.map(t => <button key={t} onClick={() => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, target: t} : x))} className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${rec.target === t ? 'bg-emerald-600 text-white border-transparent' : 'bg-white text-slate-500 border-slate-200'}`}>{t}</button>)}</div>
-                                        </div>
-                                        <div><p className="font-bold mb-3 flex items-center text-slate-700"><span className="bg-indigo-600 text-white w-6 h-6 rounded-full inline-flex items-center justify-center mr-2 text-xs">3</span> 觀察方式：</p>
-                                            <div className="grid grid-cols-4 gap-3">{SENSE_OPTIONS.map(s => <button key={s.id} onClick={() => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, sense: s.label} : x))} className={`p-4 rounded-2xl border flex flex-col items-center transition-all ${rec.sense === s.label ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-100 text-slate-300 hover:border-slate-300'}`}><LucideIcon name={s.icon} size={28}/><span className="text-[10px] mt-2 font-bold">{s.label}</span></button>)}</div>
-                                        </div>
-                                        {rec.sense && (
-                                            <div className="p-6 bg-slate-50 rounded-3xl space-y-6 border border-slate-100">
-                                                <div><p className="text-sm font-bold text-slate-500 mb-2">具體發現：</p>
-                                                    <div className="flex gap-2"><textarea value={rec.obs} onChange={(e) => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, obs: e.target.value} : x))} className="w-full h-20 p-4 rounded-2xl border-none outline-none focus:ring-2 ring-indigo-200 shadow-inner" placeholder="發現了什麼細節？"/><button onClick={() => handleMic(`adv_${rec.id}_obs`)} className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${activeMic === `adv_${rec.id}_obs` ? 'bg-red-500 animate-pulse' : 'bg-white text-slate-400'}`}><LucideIcon name="Mic"/></button></div>
-                                                </div>
-                                                <div><p className="text-sm font-bold text-slate-500 mb-2">聯想比喻：</p>
-                                                    <div className="flex gap-2"><textarea value={rec.meta} onChange={(e) => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, meta: e.target.value} : x))} className="w-full h-12 p-3 rounded-2xl border-none outline-none focus:ring-2 ring-indigo-200 shadow-inner" placeholder="它長得像什麼？或是感覺像？"/><button onClick={() => handleMic(`adv_${rec.id}_meta`)} className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${activeMic === `adv_${rec.id}_meta` ? 'bg-red-500 animate-pulse' : 'bg-white text-slate-400'}`}><LucideIcon name="Mic"/></button></div>
-                                                </div>
-                                                <div><p className="text-sm font-bold text-slate-500 mb-2">我的感覺：</p>
-                                                    <div className="flex flex-wrap gap-2">{[...FEELINGS.positive, ...FEELINGS.negative].map(f => {
-                                                        const isSel = rec.feelings.includes(f);
-                                                        return <button key={f} onClick={() => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, feelings: isSel ? x.feelings.filter(y => y !== f) : [...x.feelings, f]} : x))} className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${isSel ? 'bg-indigo-600 text-white border-transparent' : 'bg-white text-slate-400'}`}>{f}</button>
-                                                    })}</div>
-                                                </div>
+                            {tempAdvRecords.map((rec, idx) => {
+                                // 判斷目前選擇的感官對應的 FEELING 陣列
+                                const currentSenseId = SENSE_OPTIONS.find(opt => opt.label === rec.sense)?.id || 'see';
+
+                                return (
+                                    <div key={rec.id} className="bg-white rounded-3xl border-2 border-slate-200 p-8 shadow-md relative">
+                                        {tempAdvRecords.length > 1 && <button onClick={() => setTempAdvRecords(tempAdvRecords.filter(x => x.id !== rec.id))} className="absolute top-6 right-6 text-slate-300 hover:text-red-500"><LucideIcon name="Trash2"/></button>}
+                                        <div className="space-y-8">
+                                            <div><p className="font-bold mb-3 flex items-center text-slate-700"><span className="bg-indigo-600 text-white w-6 h-6 rounded-full inline-flex items-center justify-center mr-2 text-xs">1</span> 選擇地點：</p>
+                                                <div className="flex flex-wrap gap-2">{locations.map(l => <button key={l} onClick={() => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, location: l} : x))} className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${rec.location === l ? 'bg-indigo-600 text-white border-transparent' : 'bg-white text-slate-500 border-slate-200'}`}>{l}</button>)}</div>
                                             </div>
-                                        )}
+                                            <div><p className="font-bold mb-3 flex items-center text-slate-700"><span className="bg-indigo-600 text-white w-6 h-6 rounded-full inline-flex items-center justify-center mr-2 text-xs">2</span> 探索項目：</p>
+                                                <div className="flex flex-wrap gap-2">{targets.map(t => <button key={t} onClick={() => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, target: t} : x))} className={`px-4 py-2 rounded-xl text-sm font-bold border transition-all ${rec.target === t ? 'bg-emerald-600 text-white border-transparent' : 'bg-white text-slate-500 border-slate-200'}`}>{t}</button>)}</div>
+                                            </div>
+                                            <div><p className="font-bold mb-3 flex items-center text-slate-700"><span className="bg-indigo-600 text-white w-6 h-6 rounded-full inline-flex items-center justify-center mr-2 text-xs">3</span> 觀察方式：</p>
+                                                <div className="grid grid-cols-4 gap-3">{SENSE_OPTIONS.map(s => <button key={s.id} onClick={() => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, sense: s.label} : x))} className={`p-4 rounded-2xl border flex flex-col items-center transition-all ${rec.sense === s.label ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-slate-100 text-slate-300 hover:border-slate-300'}`}><LucideIcon name={s.icon} size={28}/><span className="text-[10px] mt-2 font-bold">{s.label}</span></button>)}</div>
+                                            </div>
+                                            
+                                            {rec.sense && (
+                                                <div className="p-6 bg-slate-50 rounded-3xl space-y-6 border border-slate-100">
+                                                    <div><p className="text-sm font-bold text-slate-500 mb-2">具體發現：</p>
+                                                        <div className="flex gap-2"><textarea value={rec.obs} onChange={(e) => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, obs: e.target.value} : x))} className="w-full h-20 p-4 rounded-2xl border-none outline-none focus:ring-2 ring-indigo-200 shadow-inner" placeholder="發現了什麼細節？"/><button onClick={() => handleMic(`adv_${rec.id}_obs`)} className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${activeMic === `adv_${rec.id}_obs` ? 'bg-red-500 animate-pulse' : 'bg-white text-slate-400'}`}><LucideIcon name="Mic"/></button></div>
+                                                    </div>
+                                                    <div><p className="text-sm font-bold text-slate-500 mb-2">聯想比喻：</p>
+                                                        <div className="flex gap-2"><textarea value={rec.meta} onChange={(e) => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, meta: e.target.value} : x))} className="w-full h-12 p-3 rounded-2xl border-none outline-none focus:ring-2 ring-indigo-200 shadow-inner" placeholder="它長得像什麼？或是感覺像？"/><button onClick={() => handleMic(`adv_${rec.id}_meta`)} className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${activeMic === `adv_${rec.id}_meta` ? 'bg-red-500 animate-pulse' : 'bg-white text-slate-400'}`}><LucideIcon name="Mic"/></button></div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="flex justify-between items-center mb-3">
+                                                            <p className="text-sm font-bold text-slate-500">我的感覺：</p>
+                                                            <span className="text-[10px] font-bold text-blue-600 bg-blue-100 px-2 py-1 rounded-full flex items-center">
+                                                                <LucideIcon name="Volume2" size={12} className="mr-1"/> 點1下唸讀，點2下鎖定
+                                                            </span>
+                                                        </div>
+                                                        <div className="grid grid-cols-3 md:grid-cols-5 gap-2">
+                                                            {FEELINGS[currentSenseId].map(f => {
+                                                                const isSel = rec.feelings.includes(f);
+                                                                const tapId = `adv_${rec.id}_${f}`;
+                                                                const isFocused = focusedFeeling === tapId;
+
+                                                                return (
+                                                                    <button 
+                                                                        key={f} 
+                                                                        onClick={() => {
+                                                                            if (isFocused) {
+                                                                                setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, feelings: isSel ? x.feelings.filter(y => y !== f) : [...x.feelings, f]} : x));
+                                                                                setFocusedFeeling(null);
+                                                                            } else {
+                                                                                speakText(f);
+                                                                                setFocusedFeeling(tapId);
+                                                                            }
+                                                                        }} 
+                                                                        className={`px-1 py-2 rounded-xl text-xs font-bold border transition-all relative flex items-center justify-center min-h-[44px] text-center
+                                                                            ${isSel ? 'bg-indigo-600 text-white border-transparent shadow-md' : 
+                                                                              isFocused ? 'bg-blue-50 border-blue-400 text-blue-700 ring-2 ring-blue-300' : 
+                                                                              'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}
+                                                                    >
+                                                                        {isFocused && !isSel && <div className="absolute -top-2 -right-2 bg-blue-500 text-white rounded-full p-1 shadow-sm"><LucideIcon name="Volume2" size={10}/></div>}
+                                                                        {f}
+                                                                    </button>
+                                                                )
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                )
+                            })}
                             <button onClick={() => setTempAdvRecords([...tempAdvRecords, { id: Date.now(), location: locations[0], target: '', sense: '', obs: '', meta: '', feelings: [] }])} className="w-full py-4 border-2 border-dashed border-slate-300 rounded-3xl text-slate-400 font-bold hover:bg-white transition-all">+ 新增下一個觀察發現</button>
                         </div>
                     )}
                     
                     <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t border-slate-200 flex justify-center z-50">
                         <button onClick={submitRecord} className="max-w-4xl w-full bg-indigo-600 text-white font-black py-4 px-6 rounded-2xl shadow-xl hover:bg-indigo-700 flex items-center justify-center text-xl active:scale-95">
-                            <LucideIcon name="Save" className="mr-2"/> 完成紀錄並送出
+                            <LucideIcon name="Save" className="mr-2"/> 產生小短文並預覽
                         </button>
                     </div>
+
+                    {/* 完成視窗 */}
+                    {showModal && (
+                        <div className="fixed inset-0 bg-slate-900/80 z-[100] flex items-center justify-center p-4 z-[999]">
+                            <div className="bg-white rounded-3xl max-w-xl w-full p-10 flex flex-col max-h-[90vh]">
+                                <div className="text-center mb-6"><div className="bg-emerald-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4"><LucideIcon name="Check" size={40} className="text-emerald-600" /></div><h2 className="text-3xl font-black">紀錄產生完畢！</h2><p className="text-slate-400 mt-2 font-mono text-xs">{generatedFileName}</p></div>
+                                <div className="bg-amber-50 p-6 rounded-2xl mb-8 overflow-y-auto flex-grow"><p className="leading-relaxed text-lg whitespace-pre-wrap">{generatedEssay}</p></div>
+                                <div className="flex gap-4"><button onClick={() => setShowModal(false)} className="flex-1 py-4 rounded-2xl bg-slate-100 font-bold text-slate-500 hover:bg-slate-200 transition-all">返回修改</button><button onClick={confirmSave} className="flex-1 py-4 rounded-2xl bg-indigo-600 text-white font-bold shadow-xl hover:bg-indigo-700 transition-all">確定送出</button></div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
 
             // ==========================================
-            // 6. 視圖：老師管理與電子報 (Teacher/Newsletter)
+            // 6. 渲染視圖：老師管理與電子報 (Teacher/Newsletter)
             // ==========================================
-            const TeacherView = () => (
+            const renderTeacherView = () => (
                 <div className="max-w-6xl mx-auto p-8 pb-32">
                     <div className="flex justify-between items-center mb-8 bg-white p-6 rounded-3xl shadow-sm border">
                         <div className="flex items-center"><LucideIcon name="Database" size={32} className="text-indigo-600 mr-4"/><div><h1 className="text-2xl font-black">老師資料庫管理</h1><p className="text-slate-400 text-sm">整理學生的作品集與排版輸出</p></div></div>
@@ -465,7 +581,7 @@
                 </div>
             );
 
-            const NewsletterView = () => {
+            const renderNewsletterView = () => {
                 const articles = records.filter(r => selectedRecords.includes(r.id));
                 return (
                     <div className="min-h-screen bg-stone-100 p-4 md:p-12 font-serif">
@@ -517,10 +633,10 @@
             // ==========================================
             // 主渲染區
             // ==========================================
-            if (view === 'setup') return <SetupView />;
-            if (view === 'student') return <StudentView />;
-            if (view === 'teacher') return <TeacherView />;
-            if (view === 'newsletter') return <NewsletterView />;
+            if (view === 'setup') return renderSetupView();
+            if (view === 'student') return renderStudentView();
+            if (view === 'teacher') return renderTeacherView();
+            if (view === 'newsletter') return renderNewsletterView();
             
             return null;
         }
