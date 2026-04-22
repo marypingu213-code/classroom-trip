@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>寶石鑑定室外走讀平台</title>
+    <title>寶石鑑定室 | 戶外走讀平台</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -45,7 +45,24 @@
         const MY_FIREBASE_CONFIG = null; 
         const GEMINI_API_KEY = ""; 
 
+        // 獨立初始化 Firebase，解決權限時序問題
+        let appInstance, authInstance, dbInstance, resolvedAppId;
+        try {
+            const config = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : MY_FIREBASE_CONFIG;
+            if (config) {
+                appInstance = initializeApp(config);
+                authInstance = getAuth(appInstance);
+                dbInstance = getFirestore(appInstance);
+                resolvedAppId = typeof __app_id !== 'undefined' ? __app_id : 'tainan-walk-app';
+            }
+        } catch (e) {
+            console.error("Firebase init error", e);
+        }
+
         // 基礎設定
+        const DEFAULT_LOCATIONS = ['資源班', '南美館', '奇美博物館', '林百貨', '安平古堡', '台灣文學館', '文青麵店', '四草綠色隧道', '府中街', '臺灣銀行'];
+        const DEFAULT_TARGETS = ['抓面磚', '顛倒的布幣花磚', 'AI 點餐系統', '萬字紋或菊花', '十三溝面磚', '日本福神臉譜', '竹筍柱或迷宮柱頭', '神桌上的食物', '外國紙幣', '馬賽克桌面', '自己發現的其他東西'];
+
         const SENSE_OPTIONS = [
             { id: 'see', label: '我看到了', icon: 'Eye', color: 'bg-blue-500', textColor: 'text-blue-600', lightBg: 'bg-blue-50', meta: '長得像' },
             { id: 'touch', label: '我摸到了', icon: 'Hand', color: 'bg-amber-500', textColor: 'text-amber-600', lightBg: 'bg-amber-50', meta: '摸起來像' },
@@ -75,22 +92,18 @@
         };
 
         function App() {
-            // 資料庫連線狀態
-            const [db, setDb] = useState(null);
+            // 系統狀態
+            const [isOffline] = useState(!appInstance);
             const [user, setUser] = useState(null);
-            const [appId, setAppId] = useState('tainan-walk-app');
-            const [isOffline, setIsOffline] = useState(false);
-
-            // 系統視圖：'home', 'teacher_create', 'student_join', 'student_record', 'teacher_dashboard', 'newsletter', 'setup'
             const [view, setView] = useState('home');
             
             // 任務派發狀態
-            const [currentMission, setCurrentMission] = useState(null); // { code, name, date, locations, targets }
+            const [currentMission, setCurrentMission] = useState(null); 
             const [roomCodeInput, setRoomCodeInput] = useState('');
             const [missionSetup, setMissionSetup] = useState({ name: '', date: new Date().toISOString().split('T')[0], code: '', draft: '', locations: [], targets: [] });
             const [isProcessingAI, setIsProcessingAI] = useState(false);
 
-            // 學生紀錄狀態 (加入自訂感覺 customFeelings 欄位)
+            // 學生紀錄狀態 
             const [studentName, setStudentName] = useState('');
             const [mode, setMode] = useState('beginner');
             const [tempBegData, setTempBegData] = useState({ see: '', touch: '', taste: '', hear: '', feelings: {}, customFeelings: { see: '', touch: '', taste: '', hear: '' } });
@@ -108,56 +121,49 @@
             const [layoutIndex, setLayoutIndex] = useState(0);
 
             // ==========================================
-            // 初始化 Firebase 與權限驗證
+            // 權限驗證 (先等 Token 驗證完才放行)
             // ==========================================
             useEffect(() => {
-                const initDB = async () => {
-                    let config = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : MY_FIREBASE_CONFIG;
-                    if (config) {
-                        try {
-                            const appInstance = initializeApp(config);
-                            const authInstance = getAuth(appInstance);
-                            
-                            onAuthStateChanged(authInstance, (u) => { setUser(u); });
-
-                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                                await signInWithCustomToken(authInstance, __initial_auth_token);
-                            } else {
-                                await signInAnonymously(authInstance);
-                            }
-
-                            setDb(getFirestore(appInstance));
-                            if (typeof __app_id !== 'undefined') setAppId(__app_id);
-                        } catch (e) {
-                            console.error("Firebase init error:", e);
-                            setIsOffline(true);
+                if (!authInstance) return;
+                const initAuth = async () => {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(authInstance, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(authInstance);
                         }
-                    } else {
-                        setIsOffline(true);
+                    } catch (e) {
+                        console.error("Auth init error:", e);
                     }
                 };
-                initDB();
+                initAuth();
+                
+                const unsubscribe = onAuthStateChanged(authInstance, (u) => { 
+                    setUser(u); 
+                });
+                return () => unsubscribe();
             }, []);
 
+            // 資料監聽 (確保 user 存在後才觸發)
             useEffect(() => {
-                if (db && user) {
-                    const q = collection(db, 'artifacts', appId, 'public', 'data', 'walk_records');
+                if (dbInstance && user) {
+                    const q = collection(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'walk_records');
                     const unsubscribe = onSnapshot(q, (snapshot) => {
                         const recs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                         recs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
                         setAllRecords(recs);
                     }, (error) => {
-                        console.error("Firestore onSnapshot error:", error);
+                        console.error("Firestore permission error (please check rules):", error);
                     });
                     return () => unsubscribe();
                 } else if (isOffline) {
                     const stored = JSON.parse(localStorage.getItem('walk_records') || '[]');
                     setAllRecords(stored);
                 }
-            }, [db, user, isOffline, appId]);
+            }, [user, isOffline]);
 
             // ==========================================
-            // 語音相關邏輯 (加入 Custom Feeling 的支援)
+            // 語音相關邏輯 
             // ==========================================
             useEffect(() => {
                 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -203,7 +209,7 @@
             };
 
             // ==========================================
-            // 老師開課邏輯 (AI潤飾與存入DB)
+            // 老師開課邏輯
             // ==========================================
             const processAI = async () => {
                 if (!missionSetup.draft.trim()) return;
@@ -240,9 +246,9 @@
                     createdAt: new Date().toISOString()
                 };
 
-                if (db) {
-                    if (!user) return alert("權限驗證中，請稍後再試...");
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'missions', missionData.code), missionData);
+                if (dbInstance) {
+                    if (!user) return alert("權限尚未準備好，請稍等一秒再試...");
+                    await setDoc(doc(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'missions', missionData.code), missionData);
                 } else {
                     const storedMissions = JSON.parse(localStorage.getItem('missions') || '{}');
                     storedMissions[missionData.code] = missionData;
@@ -260,9 +266,9 @@
                 if (!roomCodeInput.trim()) return alert("請輸入任務代碼");
                 
                 let missionData = null;
-                if (db) {
-                    if (!user) return alert("權限驗證中，請稍後再試...");
-                    const docSnap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'missions', roomCodeInput));
+                if (dbInstance) {
+                    if (!user) return alert("連線中，請稍候...");
+                    const docSnap = await getDoc(doc(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'missions', roomCodeInput));
                     if (docSnap.exists()) missionData = docSnap.data();
                 } else {
                     const storedMissions = JSON.parse(localStorage.getItem('missions') || '{}');
@@ -277,13 +283,12 @@
                 }
             };
 
-            // 直接進入免代碼自由探索模式
             const joinFreeExplore = () => {
                 setCurrentMission({
                     code: 'FREE',
                     name: '自由探索 (免代碼)',
-                    locations: ['資源班', '南美館', '奇美博物館', '林百貨', '安平古堡', '台灣文學館', '文青麵店', '四草綠色隧道', '府中街', '臺灣銀行'],
-                    targets: ['抓面磚', '顛倒的布幣花磚', 'AI 點餐系統', '萬字紋或菊花', '十三溝面磚', '日本福神臉譜', '竹筍柱或迷宮柱頭', '神桌上的食物', '外國紙幣', '馬賽克桌面', '自己發現的其他東西'],
+                    locations: DEFAULT_LOCATIONS,
+                    targets: DEFAULT_TARGETS,
                     date: new Date().toISOString().split('T')[0]
                 });
                 setView('student_record');
@@ -322,9 +327,9 @@
                     createdAt: new Date().toISOString()
                 };
 
-                if (db) {
-                    if (!user) return alert("權限驗證中，請稍後再試...");
-                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'walk_records', newRec.id), newRec);
+                if (dbInstance) {
+                    if (!user) return alert("連線中，請稍候...");
+                    await setDoc(doc(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'walk_records', newRec.id), newRec);
                 } else {
                     const stored = JSON.parse(localStorage.getItem('walk_records') || '[]');
                     localStorage.setItem('walk_records', JSON.stringify([newRec, ...stored]));
@@ -338,9 +343,6 @@
                 setView('home');
             };
 
-            // ==========================================
-            // 老師進入後台邏輯
-            // ==========================================
             const enterDashboard = () => {
                 if (!roomCodeInput.trim()) return alert("請輸入任務代碼");
                 setCurrentMission({ code: roomCodeInput }); 
@@ -356,14 +358,17 @@
             // 視圖渲染區塊
             // ==========================================
             
-            // 1. 首頁 (Home)
             if (view === 'home') return (
                 <div className="min-h-screen flex flex-col items-center justify-center p-6 relative">
                     {isOffline && <div className="absolute top-0 left-0 right-0 bg-amber-100 text-amber-800 text-center py-2 font-bold text-sm">⚠️ 目前為單機模式（無資料庫）。資料僅存在這台平板中，若要跨平板傳輸，請在程式碼中填寫 Firebase 設定。</div>}
                     
                     <div className="text-center mb-12">
                         <div className="bg-indigo-600 text-white p-4 rounded-full w-24 h-24 flex items-center justify-center mx-auto mb-6 shadow-xl shadow-indigo-200"><LucideIcon name="Gem" size={48} /></div>
-                        <h1 className="text-5xl font-black text-slate-800 mb-4 tracking-tight">寶石鑑定室外走讀平台</h1>
+                        {/* 修改標題：拆為兩行，徹底解決「室外」誤會 */}
+                        <h1 className="font-black tracking-tight mb-6 text-center leading-tight">
+                            <span className="block text-5xl md:text-6xl text-indigo-700 mb-2">寶石鑑定室</span>
+                            <span className="block text-3xl md:text-4xl text-slate-700">戶外走讀平台</span>
+                        </h1>
                         <p className="text-xl text-slate-500 font-medium">任務派發、紀錄與電子報系統</p>
                     </div>
 
@@ -399,7 +404,6 @@
                 </div>
             );
 
-            // 2. 老師開課 (Teacher Create)
             if (view === 'teacher_create') return (
                 <div className="max-w-4xl mx-auto p-6">
                     <button onClick={() => setView('home')} className="mb-6 flex items-center text-slate-500 hover:text-indigo-600 font-bold"><LucideIcon name="ArrowLeft" className="mr-2"/> 返回首頁</button>
@@ -429,7 +433,6 @@
                 </div>
             );
 
-            // 3. 學生加入 (Student Join)
             if (view === 'student_join') return (
                 <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-indigo-600">
                     <button onClick={() => setView('home')} className="absolute top-6 left-6 text-white/70 hover:text-white font-bold flex items-center"><LucideIcon name="ArrowLeft" className="mr-2"/> 返回</button>
@@ -443,7 +446,6 @@
                 </div>
             );
 
-            // 4. 老師登入後台 (Teacher Dashboard Login)
             if (view === 'teacher_login') return (
                 <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-amber-50">
                     <button onClick={() => setView('home')} className="absolute top-6 left-6 text-amber-800/60 hover:text-amber-800 font-bold flex items-center"><LucideIcon name="ArrowLeft" className="mr-2"/> 返回</button>
@@ -457,7 +459,6 @@
                 </div>
             );
 
-            // 5. 學生紀錄畫面 (Student Record)
             if (view === 'student_record') return (
                 <div className="max-w-4xl mx-auto p-4 pb-32">
                     <div className="flex justify-between items-center mb-6 px-2">
@@ -467,7 +468,7 @@
 
                     <header className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 text-center relative overflow-hidden mb-8">
                         <div className="absolute top-0 right-0 p-8 opacity-5"><LucideIcon name="Gem" size={120}/></div>
-                        <h1 className="text-3xl font-black text-slate-800 mb-6">寶石鑑定：感官紀錄</h1>
+                        <h1 className="text-3xl font-black text-slate-800 mb-6">寶石鑑定室：感官紀錄</h1>
                         <div className="flex justify-center mb-6">
                             <div className="bg-slate-100 p-1.5 rounded-full inline-flex border border-slate-200 z-10 relative">
                                 <button onClick={() => {setMode('beginner'); setFocusedFeeling(null);}} className={`px-8 py-2.5 rounded-full font-bold transition-all ${mode === 'beginner' ? 'bg-white text-emerald-600 shadow-md' : 'text-slate-500'}`}>初階版</button>
@@ -509,7 +510,6 @@
                                                 )
                                             })}
                                         </div>
-                                        {/* 自訂感覺輸入 */}
                                         <div className="mt-4 pt-4 border-t border-slate-200 flex gap-2 items-center">
                                             <span className="text-xs font-bold text-slate-400 whitespace-nowrap">其他感覺：</span>
                                             <input type="text" value={tempBegData.customFeelings[s.id] || ''} onChange={(e) => setTempBegData({...tempBegData, customFeelings: {...tempBegData.customFeelings, [s.id]: e.target.value}})} className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400" placeholder="我自己感覺到..." />
@@ -556,7 +556,6 @@
                                                                 )
                                                             })}
                                                         </div>
-                                                        {/* 自訂感覺輸入 */}
                                                         <div className="mt-4 pt-4 border-t border-slate-200 flex gap-2 items-center">
                                                             <span className="text-xs font-bold text-slate-400 whitespace-nowrap">其他感覺：</span>
                                                             <input type="text" value={rec.customFeeling || ''} onChange={(e) => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, customFeeling: e.target.value} : x))} className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-400" placeholder="我自己感覺到..." />
@@ -579,9 +578,7 @@
                 </div>
             );
 
-            // 6. 老師後台 (Teacher Dashboard)
             if (view === 'teacher_dashboard') {
-                // 如果是 ALL，顯示全部；否則過濾出該任務 (也包含早期沒有 missionCode 且是 FREE 進入的資料，作為相容防呆)
                 const taskRecords = currentMission?.code === 'ALL' 
                     ? allRecords 
                     : allRecords.filter(r => r.missionCode === currentMission?.code || (!r.missionCode && currentMission?.code === 'FREE'));
@@ -633,7 +630,6 @@
                 );
             }
 
-            // 7. 電子報 (Newsletter)
             if (view === 'newsletter') {
                 const articles = allRecords.filter(r => selectedRecords.includes(r.id));
                 return (
