@@ -109,6 +109,11 @@
             const [tempBegData, setTempBegData] = useState({ see: '', touch: '', taste: '', hear: '', feelings: {}, customFeelings: { see: '', touch: '', taste: '', hear: '' } });
             const [tempAdvRecords, setTempAdvRecords] = useState([{ id: Date.now(), location: '', target: '', sense: '', obs: '', meta: '', feelings: [], customFeeling: '' }]);
             
+            // 預覽與送出相關狀態
+            const [showModal, setShowModal] = useState(false);
+            const [generatedEssay, setGeneratedEssay] = useState('');
+            const [generatedFileName, setGeneratedFileName] = useState('');
+
             // 語音相關
             const [activeMic, setActiveMic] = useState(null);
             const [focusedFeeling, setFocusedFeeling] = useState(null);
@@ -294,8 +299,8 @@
                 setView('student_record');
             };
 
-            // 儲存學生紀錄
-            const submitRecord = async () => {
+            // 產生預覽小短文
+            const handlePreview = () => {
                 if (!studentName) return alert("請輸入您的姓名");
                 
                 let essay = `【作者：${studentName}】\n\n`;
@@ -317,13 +322,20 @@
                     });
                 }
 
+                setGeneratedEssay(essay);
+                setGeneratedFileName(`${(currentMission?.date || new Date().toISOString().split('T')[0]).replace(/-/g, '')}_${studentName}_${mode === 'beginner' ? '初階' : '進階'}.txt`);
+                setShowModal(true);
+            };
+
+            // 儲存學生紀錄
+            const submitRecord = async () => {
                 const newRec = {
                     id: Date.now().toString(),
                     missionCode: currentMission.code,
                     name: studentName,
                     mode: mode,
-                    content: essay,
-                    fileName: `${currentMission.date.replace(/-/g, '')}_${studentName}_${mode === 'beginner' ? '初階' : '進階'}.txt`,
+                    content: generatedEssay,
+                    fileName: generatedFileName,
                     createdAt: new Date().toISOString()
                 };
 
@@ -340,6 +352,7 @@
                 setStudentName('');
                 setTempBegData({ see: '', touch: '', taste: '', hear: '', feelings: {}, customFeelings: { see: '', touch: '', taste: '', hear: '' } });
                 setTempAdvRecords([{ id: Date.now(), location: currentMission.locations[0] || '', target: '', sense: '', obs: '', meta: '', feelings: [], customFeeling: '' }]);
+                setShowModal(false);
                 setView('home');
             };
 
@@ -573,8 +586,30 @@
                     )}
                     
                     <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t border-slate-200 flex justify-center z-50">
-                        <button onClick={submitRecord} className="max-w-4xl w-full bg-indigo-600 text-white font-black py-4 px-6 rounded-2xl shadow-xl hover:bg-indigo-700 flex items-center justify-center text-xl active:scale-95"><LucideIcon name="Save" className="mr-2"/> 送出給老師！</button>
+                        <button onClick={handlePreview} className="max-w-4xl w-full bg-indigo-600 text-white font-black py-4 px-6 rounded-2xl shadow-xl hover:bg-indigo-700 flex items-center justify-center text-xl active:scale-95"><LucideIcon name="Eye" className="mr-2"/> 預覽小短文並送出</button>
                     </div>
+
+                    {/* 完成預覽視窗 */}
+                    {showModal && (
+                        <div className="fixed inset-0 bg-slate-900/80 z-[100] flex items-center justify-center p-4">
+                            <div className="bg-white rounded-3xl max-w-xl w-full p-10 flex flex-col max-h-[90vh]">
+                                <div className="text-center mb-6">
+                                    <div className="bg-emerald-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+                                        <LucideIcon name="Check" size={40} className="text-emerald-600" />
+                                    </div>
+                                    <h2 className="text-3xl font-black">請確認你的紀錄！</h2>
+                                    <p className="text-slate-400 mt-2 font-mono text-xs">{generatedFileName}</p>
+                                </div>
+                                <div className="bg-amber-50 p-6 rounded-2xl mb-8 overflow-y-auto flex-grow custom-scrollbar">
+                                    <p className="leading-relaxed text-lg whitespace-pre-wrap">{generatedEssay}</p>
+                                </div>
+                                <div className="flex gap-4">
+                                    <button onClick={() => setShowModal(false)} className="flex-1 py-4 rounded-2xl bg-slate-100 font-bold text-slate-500 hover:bg-slate-200 transition-all">返回修改</button>
+                                    <button onClick={submitRecord} className="flex-1 py-4 rounded-2xl bg-indigo-600 text-white font-bold shadow-xl hover:bg-indigo-700 transition-all">確定送出給老師</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
 
