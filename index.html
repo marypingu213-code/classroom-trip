@@ -125,6 +125,13 @@
             const [user, setUser] = useState(null);
             const [view, setView] = useState('home');
             
+            // 首頁 QR Code 網址狀態
+            const [pageUrl, setPageUrl] = useState('');
+            useEffect(() => {
+                // 自動抓取目前的網址以生成專屬 QR Code
+                setPageUrl(window.location.href.split('#')[0]);
+            }, []);
+            
             // 任務派發狀態
             const [currentMission, setCurrentMission] = useState(null); 
             const [roomCodeInput, setRoomCodeInput] = useState('');
@@ -436,8 +443,23 @@
             
             if (view === 'home') return (
                 <div className="min-h-screen flex flex-col items-center justify-center p-6 relative">
-                    {isOffline && <div className="absolute top-0 left-0 right-0 bg-amber-100 text-amber-800 text-center py-2 font-bold text-sm">⚠️ 目前為單機模式（無資料庫）。資料僅存在這台平板中，若要跨平板傳輸，請在程式碼中填寫 Firebase 設定。</div>}
+                    {isOffline && <div className="absolute top-0 left-0 right-0 bg-amber-100 text-amber-800 text-center py-2 font-bold text-sm z-50">⚠️ 目前為單機模式（無資料庫）。資料僅存在這台平板中，若要跨平板傳輸，請在程式碼中填寫 Firebase 設定。</div>}
                     
+                    {/* 新增：右上角 QR Code 區塊 (為了排版整潔，在手機小螢幕上會自動隱藏，大螢幕與白板上會顯示) */}
+                    <div className={`absolute ${isOffline ? 'top-14' : 'top-6'} right-6 bg-white p-3 md:p-4 rounded-2xl shadow-lg border border-slate-100 flex-col items-center z-40 hidden sm:flex hover:shadow-xl transition-all`}>
+                        <p className="text-xs md:text-sm font-bold text-indigo-600 mb-2 flex items-center">
+                            <LucideIcon name="QrCode" size={16} className="mr-1" />
+                            掃碼開啟平台
+                        </p>
+                        {pageUrl && (
+                            <img 
+                                src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(pageUrl)}&margin=1`} 
+                                alt="QR Code" 
+                                className="w-24 h-24 md:w-32 md:h-32 rounded-xl border border-slate-100" 
+                            />
+                        )}
+                    </div>
+
                     <div className="text-center mb-12 mt-8">
                         <div className="bg-indigo-600 text-white p-4 rounded-full w-24 h-24 flex items-center justify-center mx-auto mb-6 shadow-xl shadow-indigo-200"><LucideIcon name="Gem" size={48} /></div>
                         <h1 className="font-black tracking-tight mb-6 text-center leading-tight">
