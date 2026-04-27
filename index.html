@@ -42,7 +42,7 @@
 
     <script type="text/babel" data-type="module">
         import { initializeApp } from 'firebase/app';
-        import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot } from 'firebase/firestore';
+        import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot, updateDoc } from 'firebase/firestore';
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 
         const { useState, useEffect, useRef } = React;
@@ -161,6 +161,10 @@
             const [recordPhotos, setRecordPhotos] = useState({});
             const [layoutIndex, setLayoutIndex] = useState(0);
             const [themeStyle, setThemeStyle] = useState('modern'); // 新增：'modern' (電子報) | 'retro' (紙本報紙)
+
+            // 老師編輯學生紀錄狀態
+            const [editingRecordId, setEditingRecordId] = useState(null);
+            const [editingContent, setEditingContent] = useState('');
 
             // 權限驗證
             useEffect(() => {
@@ -398,6 +402,32 @@
             const enterDashboardAll = () => {
                 setCurrentMission({ code: 'ALL', name: '所有紀錄' }); 
                 setView('teacher_dashboard');
+            };
+
+            // 儲存老師編輯後的學生紀錄
+            const saveEdit = async (id) => {
+                if (dbInstance && !isOffline) {
+                    try {
+                        await updateDoc(doc(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'walk_records', id), {
+                            content: editingContent
+                        });
+                    } catch (e) {
+                        console.warn("無法更新雲端，切換至單機模式保存", e);
+                        updateLocalRecord(id, editingContent);
+                        setIsOffline(true);
+                    }
+                } else {
+                    updateLocalRecord(id, editingContent);
+                }
+                setEditingRecordId(null);
+            };
+
+            // 單機模式下的編輯儲存
+            const updateLocalRecord = (id, newContent) => {
+                const stored = JSON.parse(localStorage.getItem('walk_records') || '[]');
+                const updated = stored.map(r => r.id === id ? { ...r, content: newContent } : r);
+                localStorage.setItem('walk_records', JSON.stringify(updated));
+                setAllRecords(updated);
             };
 
             // ==========================================
@@ -763,7 +793,32 @@
                                                         </label>
                                                     </div>
                                                 </td>
-                                                <td className="p-4 text-xs text-slate-400 truncate max-w-[200px] italic">{rec.content}</td>
+                                                <td className="p-4 text-sm text-slate-600 max-w-[280px]">
+                                                    {editingRecordId === rec.id ? (
+                                                        <div className="flex flex-col gap-2">
+                                                            <textarea
+                                                                value={editingContent}
+                                                                onChange={(e) => setEditingContent(e.target.value)}
+                                                                className="w-full min-h-[120px] p-3 border border-indigo-300 rounded-xl focus:outline-none focus:ring-2 ring-indigo-200 resize-none text-slate-700 shadow-inner leading-relaxed"
+                                                            />
+                                                            <div className="flex gap-2 justify-end">
+                                                                <button onClick={() => setEditingRecordId(null)} className="px-3 py-1.5 bg-slate-100 text-slate-500 hover:bg-slate-200 rounded-lg transition-colors font-bold text-xs">取消</button>
+                                                                <button onClick={() => saveEdit(rec.id)} className="px-3 py-1.5 bg-emerald-500 text-white hover:bg-emerald-600 rounded-lg transition-colors font-bold text-xs shadow-sm flex items-center"><LucideIcon name="Check" size={14} className="mr-1"/> 儲存</button>
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="relative group pr-8">
+                                                            <div className="whitespace-pre-wrap leading-relaxed italic text-slate-500 line-clamp-3 hover:line-clamp-none transition-all duration-300">{rec.content}</div>
+                                                            <button
+                                                                onClick={() => { setEditingRecordId(rec.id); setEditingContent(rec.content); }}
+                                                                className="absolute top-0 right-0 p-1.5 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all shadow-sm border border-transparent hover:border-indigo-100"
+                                                                title="編輯內容"
+                                                            >
+                                                                <LucideIcon name="Edit" size={16} />
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </td>
                                             </tr>
                                         )
                                     })}
