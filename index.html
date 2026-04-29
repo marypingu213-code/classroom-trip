@@ -17,39 +17,45 @@
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         
-        /* A4 實體報紙排版引擎 */
-        .a4-paper-wrapper {
-            width: 210mm;
-            min-height: 297mm;
-            margin: 0 auto;
+        /* 實體報紙排版引擎 */
+        .paper-wrapper {
             background: white;
             box-shadow: 0 10px 25px rgba(0,0,0,0.15);
             padding: 15mm;
             box-sizing: border-box;
+            position: relative;
         }
+        .paper-a4 { width: 210mm; min-height: 297mm; }
+        .paper-a3 { width: 420mm; min-height: 297mm; } /* A3 橫式 = 兩張 A4 直式拼合 */
         
-        /* 報紙欄位與直式排版 */
-        .news-columns { column-gap: 6mm; orphans: 1; widows: 1; }
         .vertical-text { 
             writing-mode: vertical-rl; 
             text-orientation: upright;
             letter-spacing: 0.1em;
         }
-        .article-card { break-inside: avoid; margin-bottom: 6mm; }
+        
+        /* 關鍵修復：絕對防止列印時文章被從中切斷 */
+        .article-card { 
+            break-inside: avoid; 
+            page-break-inside: avoid;
+            -webkit-column-break-inside: avoid;
+            margin-bottom: 6mm; 
+        }
 
         @media print { 
-            @page { size: A4 portrait; margin: 15mm; }
             body { background: white; padding: 0; margin: 0; } 
             .print\:hidden { display: none !important; } 
             /* 強制列印出所有背景色與粗邊框，達到所見即所得 */
             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            .a4-paper-wrapper {
-                width: 100%;
-                min-height: auto;
-                margin: 0;
-                padding: 0;
-                box-shadow: none;
+            .paper-wrapper {
+                width: 100% !important;
+                min-height: auto !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                box-shadow: none !important;
+                border: none !important;
             }
+            .a3-fold-line { display: none !important; }
         }
     </style>
 </head>
@@ -100,7 +106,6 @@
             console.error("Firebase init error", e);
         }
 
-        // 基礎設定
         const DEFAULT_LOCATIONS = ['資源班', '南美館', '奇美博物館', '林百貨', '安平古堡', '台灣文學館', '文青麵店', '四草綠色隧道', '府中街', '臺灣銀行'];
         const DEFAULT_TARGETS = ['抓面磚', '顛倒的布幣花磚', 'AI 點餐系統', '萬字紋或菊花', '十三溝面磚', '日本福神臉譜', '竹筍柱或迷宮柱頭', '神桌上的食物', '外國紙幣', '馬賽克桌面', '自己發現的其他東西'];
 
@@ -132,7 +137,6 @@
             return <span ref={containerRef} className="inline-flex items-center justify-center"></span>;
         };
 
-        // 圖片壓縮輔助函數
         const compressImage = (file, callback) => {
             if (!file) return;
             const reader = new FileReader();
@@ -154,78 +158,57 @@
             };
         };
 
-        // ==========================================
-        // 主應用程式
-        // ==========================================
         function App() {
             const [isOffline, setIsOffline] = useState(!appInstance);
             const [user, setUser] = useState(null);
             const [view, setView] = useState('home');
             
-            // 首頁 QR Code 網址狀態
             const [pageUrl, setPageUrl] = useState('');
-            useEffect(() => {
-                setPageUrl(window.location.href.split('#')[0]);
-            }, []);
+            useEffect(() => { setPageUrl(window.location.href.split('#')[0]); }, []);
             
-            // 任務派發狀態
             const [currentMission, setCurrentMission] = useState(null); 
             const [roomCodeInput, setRoomCodeInput] = useState('');
             const [missionSetup, setMissionSetup] = useState({ name: '', date: new Date().toISOString().split('T')[0], code: '', draft: '', locations: [], targets: [] });
             const [isProcessingAI, setIsProcessingAI] = useState(false);
 
-            // 學生紀錄狀態 
             const [studentName, setStudentName] = useState('');
             const [mode, setMode] = useState('beginner');
-            const [tempBegData, setTempBegData] = useState({ 
-                see: '', touch: '', taste: '', hear: '', 
-                feelings: {}, customFeelings: { see: '', touch: '', taste: '', hear: '' },
-                photos: { see: null, touch: null, taste: null, hear: null }
-            });
-            const [tempAdvRecords, setTempAdvRecords] = useState([{ 
-                id: Date.now(), location: '', target: '', sense: '', obs: '', meta: '', feelings: [], customFeeling: '', photo: null
-            }]);
+            const [tempBegData, setTempBegData] = useState({ see: '', touch: '', taste: '', hear: '', feelings: {}, customFeelings: { see: '', touch: '', taste: '', hear: '' }, photos: { see: null, touch: null, taste: null, hear: null } });
+            const [tempAdvRecords, setTempAdvRecords] = useState([{ id: Date.now(), location: '', target: '', sense: '', obs: '', meta: '', feelings: [], customFeeling: '', photo: null }]);
             
-            // 預覽與送出
             const [showModal, setShowModal] = useState(false);
             const [generatedEssay, setGeneratedEssay] = useState('');
             const [generatedFileName, setGeneratedFileName] = useState('');
 
-            // 語音
             const [activeMic, setActiveMic] = useState(null);
             const activeMicRef = useRef(null);
             useEffect(() => { activeMicRef.current = activeMic; }, [activeMic]);
-            const [focusedFeeling, setFocusedFeeling] = useState(null);
             const recognitionRef = useRef(null);
+            const [focusedFeeling, setFocusedFeeling] = useState(null);
 
-            // 資料庫數據與版面控制
             const [allRecords, setAllRecords] = useState([]);
             const [selectedRecords, setSelectedRecords] = useState([]);
             const [recordPhotos, setRecordPhotos] = useState({});
             
             // 報紙專屬控制狀態
-            const [layoutIndex, setLayoutIndex] = useState(0);
+            const [layoutIndex, setLayoutIndex] = useState(0); // 0:雙欄/四欄, 1:單欄/雙欄, 2:頭條放大
             const [themeStyle, setThemeStyle] = useState('retro-color'); // 'retro-color' | 'retro-bw' | 'modern'
+            const [paperSize, setPaperSize] = useState('A4'); // 'A4' | 'A3' -> 新增A3支援雙張A4展開
             const [newspaperTitle, setNewspaperTitle] = useState('寶石鑑定日報');
             const [newspaperDate, setNewspaperDate] = useState(new Date().toISOString().split('T')[0]);
             const [newspaperTaskLabel, setNewspaperTaskLabel] = useState('TASK: ALL');
             const [articleOverrides, setArticleOverrides] = useState({}); 
 
-            // 老師編輯學生紀錄狀態
             const [editingRecordId, setEditingRecordId] = useState(null);
             const [editingContent, setEditingContent] = useState('');
 
-            // 權限驗證與資料監聽
             useEffect(() => {
                 if (!authInstance) return;
                 const initAuth = async () => {
                     try {
                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(authInstance, __initial_auth_token);
                         else await signInAnonymously(authInstance);
-                    } catch (e) { 
-                        console.error("Auth init error:", e);
-                        setIsOffline(true);
-                    }
+                    } catch (e) { setIsOffline(true); }
                 };
                 initAuth();
                 const unsubscribe = onAuthStateChanged(authInstance, (u) => { setUser(u); });
@@ -239,10 +222,7 @@
                         const recs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                         recs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
                         setAllRecords(recs);
-                    }, (e) => { 
-                        console.warn("Firestore permission error, switching to offline:", e);
-                        setIsOffline(true);
-                    });
+                    }, (e) => { setIsOffline(true); });
                     return () => unsubscribe();
                 } else if (isOffline) {
                     const stored = JSON.parse(localStorage.getItem('walk_records') || '[]');
@@ -250,7 +230,6 @@
                 }
             }, [user, isOffline]);
 
-            // 語音邏輯
             useEffect(() => {
                 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
                 if (SpeechRecognition) {
@@ -295,7 +274,6 @@
                 }
             };
 
-            // 老師開課邏輯
             const processAI = async () => {
                 if (!missionSetup.draft.trim()) return;
                 setIsProcessingAI(true);
@@ -303,11 +281,7 @@
                 try {
                     const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey || GEMINI_API_KEY}`, {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents: [{ parts: [{ text: missionSetup.draft }] }],
-                            systemInstruction: { parts: [{ text: prompt }] },
-                            generationConfig: { responseMimeType: "application/json" }
-                        })
+                        body: JSON.stringify({ contents: [{ parts: [{ text: missionSetup.draft }] }], systemInstruction: { parts: [{ text: prompt }] }, generationConfig: { responseMimeType: "application/json" } })
                     });
                     const data = await res.json();
                     const result = JSON.parse(data.candidates[0].content.parts[0].text);
@@ -316,68 +290,34 @@
                 } catch (e) {
                     alert("AI 生成失敗。系統將為您帶入預設地點與項目供您修改。");
                     setMissionSetup(prev => ({ ...prev, locations: ['南美館', '林百貨', '資源班'], targets: ['十三溝面磚', '點餐系統', '抓面磚'] }));
-                } finally {
-                    setIsProcessingAI(false);
-                }
+                } finally { setIsProcessingAI(false); }
             };
 
             const createMission = async () => {
                 if (!missionSetup.name || !missionSetup.code) return alert("請填寫任務名稱與任務代碼");
                 if (missionSetup.locations.length === 0) return alert("請先手動設定或透過 AI 提取地點與項目");
-
-                const missionData = {
-                    code: missionSetup.code, name: missionSetup.name, date: missionSetup.date,
-                    locations: missionSetup.locations, targets: missionSetup.targets,
-                    createdAt: new Date().toISOString()
-                };
-
+                const missionData = { code: missionSetup.code, name: missionSetup.name, date: missionSetup.date, locations: missionSetup.locations, targets: missionSetup.targets, createdAt: new Date().toISOString() };
                 if (dbInstance && !isOffline) {
                     if (!user) return alert("權限尚未準備好，請稍等一秒再試...");
-                    try {
-                        await setDoc(doc(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'missions', missionData.code), missionData);
-                    } catch (e) {
-                        console.warn("無法寫入雲端，切換至單機模式保存", e);
-                        setIsOffline(true);
-                        const storedMissions = JSON.parse(localStorage.getItem('missions') || '{}');
-                        storedMissions[missionData.code] = missionData;
-                        localStorage.setItem('missions', JSON.stringify(storedMissions));
-                    }
+                    try { await setDoc(doc(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'missions', missionData.code), missionData); } 
+                    catch (e) { setIsOffline(true); const storedMissions = JSON.parse(localStorage.getItem('missions') || '{}'); storedMissions[missionData.code] = missionData; localStorage.setItem('missions', JSON.stringify(storedMissions)); }
                 } else {
-                    const storedMissions = JSON.parse(localStorage.getItem('missions') || '{}');
-                    storedMissions[missionData.code] = missionData;
-                    localStorage.setItem('missions', JSON.stringify(storedMissions));
+                    const storedMissions = JSON.parse(localStorage.getItem('missions') || '{}'); storedMissions[missionData.code] = missionData; localStorage.setItem('missions', JSON.stringify(storedMissions));
                 }
-                
                 alert(`開課成功！請請學生輸入任務代碼：${missionData.code}`);
                 setView('home');
             };
 
-            // 學生加入與紀錄
             const joinMission = async () => {
                 if (!roomCodeInput.trim()) return alert("請輸入任務代碼");
-                
                 let missionData = null;
                 if (dbInstance && !isOffline) {
                     if (!user) return alert("連線中，請稍候...");
-                    try {
-                        const docSnap = await getDoc(doc(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'missions', roomCodeInput));
-                        if (docSnap.exists()) missionData = docSnap.data();
-                    } catch (e) {
-                        setIsOffline(true);
-                        const storedMissions = JSON.parse(localStorage.getItem('missions') || '{}');
-                        missionData = storedMissions[roomCodeInput];
-                    }
-                } else {
-                    const storedMissions = JSON.parse(localStorage.getItem('missions') || '{}');
-                    missionData = storedMissions[roomCodeInput];
-                }
-
-                if (missionData) {
-                    setCurrentMission(missionData);
-                    setView('student_record');
-                } else {
-                    alert("找不到此任務代碼，請確認老師是否已經開課！");
-                }
+                    try { const docSnap = await getDoc(doc(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'missions', roomCodeInput)); if (docSnap.exists()) missionData = docSnap.data(); } 
+                    catch (e) { setIsOffline(true); const storedMissions = JSON.parse(localStorage.getItem('missions') || '{}'); missionData = storedMissions[roomCodeInput]; }
+                } else { const storedMissions = JSON.parse(localStorage.getItem('missions') || '{}'); missionData = storedMissions[roomCodeInput]; }
+                if (missionData) { setCurrentMission(missionData); setView('student_record'); } 
+                else { alert("找不到此任務代碼，請確認老師是否已經開課！"); }
             };
 
             const joinFreeExplore = () => {
@@ -387,7 +327,6 @@
 
             const handlePreview = () => {
                 if (!studentName) return alert("請輸入您的姓名");
-                
                 let essay = `【作者：${studentName}】\n\n`;
                 if (mode === 'beginner') {
                     SENSE_OPTIONS.forEach(s => {
@@ -402,7 +341,6 @@
                         if (r.target) essay += `（發現 ${idx+1}）在「${r.location}」探索「${r.target}」。透過「${r.sense}」，發現了「${r.obs}」，覺得它「${r.meta}」，心情「${combinedFeelings.join('、')}」。\n\n`;
                     });
                 }
-
                 setGeneratedEssay(essay);
                 setGeneratedFileName(`${(currentMission?.date || new Date().toISOString().split('T')[0]).replace(/-/g, '')}_${studentName}_${mode === 'beginner' ? '初階' : '進階'}.txt`);
                 setShowModal(true);
@@ -412,28 +350,11 @@
                 let studentPhotos = [];
                 if (mode === 'beginner') Object.values(tempBegData.photos).forEach(url => { if(url) studentPhotos.push(url); });
                 else tempAdvRecords.forEach(r => { if(r.photo) studentPhotos.push(r.photo); });
-
-                const newRec = {
-                    id: Date.now().toString(),
-                    missionCode: currentMission.code, name: studentName, mode: mode,
-                    content: generatedEssay, fileName: generatedFileName, studentPhotos: studentPhotos,
-                    createdAt: new Date().toISOString()
-                };
-
+                const newRec = { id: Date.now().toString(), missionCode: currentMission.code, name: studentName, mode: mode, content: generatedEssay, fileName: generatedFileName, studentPhotos: studentPhotos, createdAt: new Date().toISOString() };
                 if (dbInstance && !isOffline) {
                     try { await setDoc(doc(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'walk_records', newRec.id), newRec); } 
-                    catch (e) {
-                        setIsOffline(true);
-                        const stored = JSON.parse(localStorage.getItem('walk_records') || '[]');
-                        localStorage.setItem('walk_records', JSON.stringify([newRec, ...stored]));
-                        setAllRecords([newRec, ...stored]);
-                    }
-                } else {
-                    const stored = JSON.parse(localStorage.getItem('walk_records') || '[]');
-                    localStorage.setItem('walk_records', JSON.stringify([newRec, ...stored]));
-                    setAllRecords([newRec, ...stored]);
-                }
-
+                    catch (e) { setIsOffline(true); const stored = JSON.parse(localStorage.getItem('walk_records') || '[]'); localStorage.setItem('walk_records', JSON.stringify([newRec, ...stored])); setAllRecords([newRec, ...stored]); }
+                } else { const stored = JSON.parse(localStorage.getItem('walk_records') || '[]'); localStorage.setItem('walk_records', JSON.stringify([newRec, ...stored])); setAllRecords([newRec, ...stored]); }
                 alert("紀錄已成功送出！");
                 setStudentName('');
                 setTempBegData({ see: '', touch: '', taste: '', hear: '', feelings: {}, customFeelings: { see: '', touch: '', taste: '', hear: '' }, photos: { see: null, touch: null, taste: null, hear: null } });
@@ -448,14 +369,12 @@
                 setNewspaperTaskLabel(`TASK: ${roomCodeInput}`);
                 setView('teacher_dashboard');
             };
-            
             const enterDashboardAll = () => { 
                 setCurrentMission({ code: 'ALL', name: '所有紀錄' }); 
                 setNewspaperTaskLabel('TASK: ALL');
                 setView('teacher_dashboard'); 
             };
 
-            // 老師編輯邏輯
             const saveEdit = async (id) => {
                 if (dbInstance && !isOffline) {
                     try { await updateDoc(doc(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'walk_records', id), { content: editingContent }); } 
@@ -463,6 +382,7 @@
                 } else { updateLocalRecord(id, editingContent); }
                 setEditingRecordId(null);
             };
+            
             const updateLocalRecord = (id, newContent) => {
                 const stored = JSON.parse(localStorage.getItem('walk_records') || '[]');
                 const updated = stored.map(r => r.id === id ? { ...r, content: newContent } : r);
@@ -489,7 +409,6 @@
             // ==========================================
             // 視圖渲染區塊
             // ==========================================
-            
             if (view === 'home') return (
                 <div className="min-h-screen flex flex-col items-center justify-center p-6 relative">
                     {isOffline && <div className="absolute top-0 left-0 right-0 bg-amber-100 text-amber-800 text-center py-2 font-bold text-sm z-50">⚠️ 目前為單機模式（無資料庫）。資料僅存在這台平板中，若要跨平板傳輸，請在程式碼中填寫 Firebase 設定。</div>}
@@ -551,7 +470,7 @@
                             <div className="flex items-center"><LucideIcon name="Database" size={32} className="text-amber-500 mr-4"/><div><h1 className="text-2xl font-black">任務後台：{currentMission?.code === 'ALL' ? '所有歷史紀錄' : currentMission?.code}</h1><p className="text-slate-400 text-sm">整理學生作品，生成電子報</p></div></div>
                             <div className="flex gap-3">
                                 <button onClick={() => setView('home')} className="px-4 py-2 rounded-xl border font-bold text-slate-400 hover:bg-slate-50 transition-colors">回首頁</button>
-                                <button onClick={() => setView('newsletter')} disabled={selectedRecords.length === 0} className="px-6 py-2 rounded-xl bg-indigo-600 text-white font-black disabled:bg-slate-200 hover:bg-indigo-700 transition-colors shadow-md">生成電子報 ({selectedRecords.length})</button>
+                                <button onClick={() => setView('newsletter')} disabled={selectedRecords.length === 0} className="px-6 py-2 rounded-xl bg-indigo-600 text-white font-black disabled:bg-slate-200 hover:bg-indigo-700 transition-colors shadow-md">生成報紙 ({selectedRecords.length})</button>
                             </div>
                         </div>
                         <div className="bg-white rounded-3xl shadow-sm border overflow-hidden">
@@ -612,20 +531,8 @@
                                                         <div className="relative group pr-16">
                                                             <div className="whitespace-pre-wrap leading-relaxed italic text-slate-500 line-clamp-3 hover:line-clamp-none transition-all duration-300">{textContent}</div>
                                                             <div className="absolute top-0 right-0 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                                                                <button
-                                                                    onClick={() => { setEditingRecordId(rec.id); setEditingContent(textContent); }}
-                                                                    className="p-1.5 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg shadow-sm border border-transparent hover:border-indigo-100 bg-white/80"
-                                                                    title="編輯內容"
-                                                                >
-                                                                    <LucideIcon name="Edit" size={16} />
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => deleteRecord(rec.id)}
-                                                                    className="p-1.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-lg shadow-sm border border-transparent hover:border-red-100 bg-white/80"
-                                                                    title="刪除紀錄"
-                                                                >
-                                                                    <LucideIcon name="Trash2" size={16} />
-                                                                </button>
+                                                                <button onClick={() => { setEditingRecordId(rec.id); setEditingContent(textContent); }} className="p-1.5 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg shadow-sm border border-transparent hover:border-indigo-100 bg-white/80" title="編輯內容"><LucideIcon name="Edit" size={16} /></button>
+                                                                <button onClick={() => deleteRecord(rec.id)} className="p-1.5 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded-lg shadow-sm border border-transparent hover:border-red-100 bg-white/80" title="刪除紀錄"><LucideIcon name="Trash2" size={16} /></button>
                                                             </div>
                                                         </div>
                                                     )}
@@ -646,14 +553,28 @@
                 const isRetro = themeStyle === 'retro-bw' || themeStyle === 'retro-color';
                 const isColor = themeStyle === 'retro-color';
 
-                // 準備顯示在報紙報頭的日期轉換 (西元轉民國)
                 const d = new Date(newspaperDate);
                 const rocYear = isNaN(d.getFullYear()) ? new Date().getFullYear() - 1911 : d.getFullYear() - 1911;
                 const month = isNaN(d.getMonth()) ? new Date().getMonth() + 1 : d.getMonth() + 1;
                 const day = isNaN(d.getDate()) ? new Date().getDate() : d.getDate();
 
+                // 根據紙張大小決定格線佈局
+                let layoutClass = '';
+                if (layoutIndex === 0) layoutClass = paperSize === 'A3' ? 'grid grid-cols-4 gap-6' : 'grid grid-cols-2 gap-6';
+                if (layoutIndex === 1) layoutClass = paperSize === 'A3' ? 'grid grid-cols-2 gap-8' : 'flex flex-col gap-6';
+                if (layoutIndex === 2) layoutClass = paperSize === 'A3' ? 'grid grid-cols-4 gap-6' : 'grid grid-cols-2 gap-6';
+
                 return (
                     <div className="min-h-screen bg-stone-200 p-4 md:p-8 font-serif">
+                        {/* 動態注入列印樣式，強制印表機套用您選擇的紙張大小 */}
+                        <style>
+                            {`
+                            @media print { 
+                                @page { size: ${paperSize === 'A3' ? 'A3 landscape' : 'A4 portrait'}; margin: 15mm; }
+                            }
+                            `}
+                        </style>
+
                         {/* 報紙編輯控制台 */}
                         <div className="max-w-6xl mx-auto mb-8 print:hidden flex flex-col gap-4 bg-white/95 p-5 rounded-2xl backdrop-blur-sm shadow-md border border-white">
                             <div className="flex justify-between items-center flex-wrap gap-4 border-b border-slate-100 pb-4">
@@ -665,270 +586,227 @@
                             </div>
                             
                             <div className="flex flex-wrap items-center gap-6">
-                                {/* 編輯大標題 */}
-                                <div className="flex items-center gap-2 font-sans flex-grow min-w-[200px]">
-                                    <span className="text-sm font-bold text-slate-500 whitespace-nowrap">版面大標題：</span>
-                                    <input 
-                                        type="text" 
-                                        value={newspaperTitle} 
-                                        onChange={e => setNewspaperTitle(e.target.value)}
-                                        className="flex-grow bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 font-bold text-slate-700 focus:outline-none focus:ring-2 ring-indigo-200"
-                                    />
-                                </div>
-
-                                {/* 編輯日期 */}
-                                <div className="flex items-center gap-2 font-sans flex-grow min-w-[150px]">
-                                    <span className="text-sm font-bold text-slate-500 whitespace-nowrap">日期：</span>
-                                    <input 
-                                        type="date" 
-                                        value={newspaperDate} 
-                                        onChange={e => setNewspaperDate(e.target.value)}
-                                        className="flex-grow bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 font-bold text-slate-700 focus:outline-none focus:ring-2 ring-indigo-200"
-                                    />
-                                </div>
-
-                                {/* 編輯右上角標籤/總編輯 */}
-                                <div className="flex items-center gap-2 font-sans flex-grow min-w-[200px]">
-                                    <span className="text-sm font-bold text-slate-500 whitespace-nowrap">右上角標籤：</span>
-                                    <input 
-                                        type="text" 
-                                        value={newspaperTaskLabel} 
-                                        onChange={e => setNewspaperTaskLabel(e.target.value)}
-                                        className="flex-grow bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 font-bold text-slate-700 focus:outline-none focus:ring-2 ring-indigo-200"
-                                        placeholder="例: 總編輯: 某某某"
-                                    />
-                                </div>
-                                
-                                {/* 編輯風格 */}
                                 <div className="flex items-center gap-2 font-sans bg-slate-100 p-1 rounded-xl">
-                                    <button onClick={() => setThemeStyle('modern')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${themeStyle === 'modern' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>現代電子報</button>
-                                    <button onClick={() => setThemeStyle('retro-color')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${themeStyle === 'retro-color' ? 'bg-white shadow text-red-600' : 'text-slate-500 hover:text-slate-700'}`}>復古彩色報</button>
-                                    <button onClick={() => setThemeStyle('retro-bw')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${themeStyle === 'retro-bw' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>復古黑白報</button>
+                                    <span className="text-xs font-bold text-slate-400 pl-2">紙張：</span>
+                                    <button onClick={() => setPaperSize('A4')} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${paperSize === 'A4' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>A4 單頁直式</button>
+                                    <button onClick={() => setPaperSize('A3')} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${paperSize === 'A3' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>A3 雙頁展開</button>
                                 </div>
 
-                                {/* 編輯排版 */}
+                                <div className="flex items-center gap-2 font-sans bg-slate-100 p-1 rounded-xl">
+                                    <span className="text-xs font-bold text-slate-400 pl-2">風格：</span>
+                                    <button onClick={() => setThemeStyle('modern')} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${themeStyle === 'modern' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>現代</button>
+                                    <button onClick={() => setThemeStyle('retro-color')} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${themeStyle === 'retro-color' ? 'bg-white shadow text-red-600' : 'text-slate-500 hover:text-slate-700'}`}>復古彩色</button>
+                                    <button onClick={() => setThemeStyle('retro-bw')} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${themeStyle === 'retro-bw' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>復古黑白</button>
+                                </div>
+
                                 <div className="flex items-center gap-2 font-sans bg-slate-100 p-1 rounded-xl">
                                     <span className="text-xs font-bold text-slate-400 pl-2">排列：</span>
                                     <button onClick={() => setLayoutIndex(0)} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${layoutIndex === 0 ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>雙欄</button>
                                     <button onClick={() => setLayoutIndex(1)} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${layoutIndex === 1 ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>單欄</button>
                                     <button onClick={() => setLayoutIndex(2)} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${layoutIndex === 2 ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>頭條放大</button>
                                 </div>
+
+                                <div className="flex items-center gap-2 font-sans flex-grow min-w-[200px] mt-2 w-full">
+                                    <span className="text-sm font-bold text-slate-500 whitespace-nowrap">報紙大標題：</span>
+                                    <input type="text" value={newspaperTitle} onChange={e => setNewspaperTitle(e.target.value)} className="w-48 bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 font-bold text-slate-700 focus:outline-none focus:ring-2 ring-indigo-200" />
+                                    <span className="text-sm font-bold text-slate-500 whitespace-nowrap ml-4">日期：</span>
+                                    <input type="date" value={newspaperDate} onChange={e => setNewspaperDate(e.target.value)} className="w-36 bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 font-bold text-slate-700 focus:outline-none focus:ring-2 ring-indigo-200" />
+                                    <span className="text-sm font-bold text-slate-500 whitespace-nowrap ml-4">右上角標籤：</span>
+                                    <input type="text" value={newspaperTaskLabel} onChange={e => setNewspaperTaskLabel(e.target.value)} className="flex-grow bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 font-bold text-slate-700 focus:outline-none focus:ring-2 ring-indigo-200" />
+                                </div>
                             </div>
                         </div>
                         
-                        {/* A4 實體報紙預覽容器 */}
-                        <div className="a4-paper-wrapper print-exact">
-                            {!isRetro ? (
-                                /* 現代風格電子報 */
-                                <div className="h-full">
-                                    <div className="border-b-8 border-double border-indigo-900 text-center pb-8 mb-10">
-                                        <h1 className="text-5xl font-black mb-4 tracking-wider text-indigo-900">{newspaperTitle}</h1>
-                                        <p className="text-lg text-slate-500 uppercase tracking-[0.3em] font-sans font-bold">{newspaperTaskLabel} • {newspaperDate}</p>
-                                    </div>
-                                    <div className={`news-columns ${layoutIndex === 0 ? 'columns-1 md:columns-2' : layoutIndex === 1 ? 'flex flex-col' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
-                                        {articles.map((art, idx) => {
-                                            const stuPhotos = (art.studentPhotos || []).map((url, i) => ({ id: `stu_${i}`, url, selected: true }));
-                                            const teaPhotos = (recordPhotos[art.id] || []).filter(p => p.selected);
-                                            const photos = [...stuPhotos, ...teaPhotos];
-                                            const isFeatured = layoutIndex === 2 && idx === 0;
+                        {/* 報紙預覽容器，加入 x 軸 scroll 讓 A3 大螢幕預覽更順暢 */}
+                        <div className="w-full overflow-x-auto pb-12">
+                            <div className={`paper-wrapper print-exact ${paperSize === 'A4' ? 'paper-a4' : 'paper-a3'}`}>
+                                
+                                {/* A3 專用的模擬摺線 (螢幕預覽用，列印時隱藏) */}
+                                {paperSize === 'A3' && (
+                                    <div className="a3-fold-line absolute top-0 bottom-0 left-1/2 border-l-2 border-dashed border-slate-300 opacity-50 z-0 pointer-events-none"></div>
+                                )}
 
-                                            // 標題覆寫邏輯
-                                            const defaultTitle = `【${art.name || art.studentName}】的感官發現`;
-                                            const currentTitle = articleOverrides[art.id]?.title ?? defaultTitle;
-                                            const defaultTitleSize = isFeatured ? 'text-4xl' : 'text-2xl';
-                                            const currentTitleSize = articleOverrides[art.id]?.titleSize ?? defaultTitleSize;
+                                <div className="relative z-10 h-full">
+                                    {!isRetro ? (
+                                        /* 現代風格電子報 */
+                                        <div>
+                                            <div className="border-b-8 border-double border-indigo-900 text-center pb-8 mb-10">
+                                                <h1 className="text-5xl font-black mb-4 tracking-wider text-indigo-900">{newspaperTitle}</h1>
+                                                <p className="text-lg text-slate-500 uppercase tracking-[0.3em] font-sans font-bold">{newspaperTaskLabel} • {newspaperDate}</p>
+                                            </div>
+                                            <div className={layoutClass}>
+                                                {articles.map((art, idx) => {
+                                                    const stuPhotos = (art.studentPhotos || []).map((url, i) => ({ id: `stu_${i}`, url, selected: true }));
+                                                    const teaPhotos = (recordPhotos[art.id] || []).filter(p => p.selected);
+                                                    const photos = [...stuPhotos, ...teaPhotos];
+                                                    const isFeatured = layoutIndex === 2 && idx === 0;
 
-                                            // 處理可能因老師編輯而遺失的格式
-                                            const contentStr = art.content || art.essay || '';
-                                            let displayContent = contentStr;
-                                            if (displayContent.startsWith('【作者：')) {
-                                                const parts = displayContent.split('\n\n');
-                                                if (parts.length > 1) displayContent = parts.slice(1).join('\n\n');
-                                            }
+                                                    const defaultTitle = `【${art.name || art.studentName}】的感官發現`;
+                                                    const currentTitle = articleOverrides[art.id]?.title ?? defaultTitle;
+                                                    const defaultTitleSize = isFeatured ? 'text-4xl' : 'text-2xl';
+                                                    const currentTitleSize = articleOverrides[art.id]?.titleSize ?? defaultTitleSize;
 
-                                            return (
-                                                <div key={art.id} className={`article-card p-6 bg-slate-50 border-t-4 border-indigo-500 shadow-sm relative ${isFeatured ? 'md:col-span-full bg-white border-l-8 border-t-0 shadow-md' : ''}`}>
-                                                    
-                                                    {/* 個別排版微調工具列 */}
-                                                    <div className="print:hidden bg-indigo-50 border border-indigo-100 rounded-lg p-2 mb-4 flex flex-wrap gap-2 items-center text-sm shadow-sm">
-                                                        <LucideIcon name="Settings" size={16} className="text-indigo-400" />
-                                                        <span className="font-bold text-indigo-700">個別排版微調:</span>
-                                                        <input
-                                                            type="text"
-                                                            value={currentTitle}
-                                                            onChange={e => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), title: e.target.value}}))}
-                                                            className="px-2 py-1 rounded border border-indigo-200 flex-grow max-w-[200px] outline-none focus:border-indigo-400"
-                                                            placeholder="自訂標題..."
-                                                        />
-                                                        <select
-                                                            value={currentTitleSize}
-                                                            onChange={e => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), titleSize: e.target.value}}))}
-                                                            className="px-2 py-1 rounded border border-indigo-200 outline-none focus:border-indigo-400 text-slate-600"
-                                                        >
-                                                            <option value="text-xl">字體: 小 (XL)</option>
-                                                            <option value="text-2xl">字體: 中 (2XL)</option>
-                                                            <option value="text-3xl">字體: 大 (3XL)</option>
-                                                            <option value="text-4xl">字體: 特大 (4XL)</option>
-                                                            <option value="text-5xl">字體: 超大 (5XL)</option>
-                                                        </select>
-                                                    </div>
+                                                    const contentStr = art.content || art.essay || '';
+                                                    let displayContent = contentStr;
+                                                    if (displayContent.startsWith('【作者：')) {
+                                                        const parts = displayContent.split('\n\n');
+                                                        if (parts.length > 1) displayContent = parts.slice(1).join('\n\n');
+                                                    }
 
-                                                    <h3 className={`${currentTitleSize} font-black mb-4 leading-tight text-slate-800`}>{currentTitle}</h3>
-                                                    
-                                                    {photos.length > 0 && <div className={`mb-5 flex gap-3 ${isFeatured ? 'justify-center' : 'flex-wrap'}`}>
-                                                        {photos.map(p => {
-                                                            const defaultPhotoClass = isFeatured ? 'h-64 flex-grow' : 'h-40 flex-grow';
-                                                            const currentPhotoClass = articleOverrides[art.id]?.photoSizes?.[p.id] ?? defaultPhotoClass;
-                                                            return (
-                                                                <div key={p.id} className={`relative group ${currentPhotoClass} min-w-[120px]`}>
-                                                                    <img src={p.url} className={`border border-slate-200 shadow-sm rounded object-cover w-full h-full`} />
-                                                                    {/* 圖片大小微調選單 */}
-                                                                    <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 print:hidden bg-white/95 p-1.5 rounded-lg shadow-lg border border-slate-200 z-10 flex flex-wrap gap-1 max-w-[140px] backdrop-blur-sm">
-                                                                        <span className="w-full text-[10px] font-black text-slate-500 text-center mb-1">調整圖片尺寸</span>
-                                                                        <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-32 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">小</button>
-                                                                        <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-48 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">中</button>
-                                                                        <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-64 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">大</button>
-                                                                        <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-96 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">特大</button>
-                                                                        <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-auto w-full'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded w-full mt-1 font-bold">滿版寬度</button>
-                                                                    </div>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>}
-                                                    
-                                                    <p className={`text-slate-700 leading-relaxed font-sans ${isFeatured ? 'text-lg' : 'text-sm'} whitespace-pre-wrap`}>{displayContent}</p>
-                                                    
-                                                    <div className="mt-5 pt-3 border-t border-slate-200 flex justify-end items-center italic text-xs text-slate-400 font-sans">
-                                                        <span>#{art.name || art.studentName}</span>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            ) : (
-                                /* 復古風格紙本報紙 (黑白/彩色) */
-                                <div className="h-full relative print-exact">
-                                    {/* 傳統報頭區塊 */}
-                                    <div className={`border-t-[12px] border-b-4 border-black border-double py-6 mb-8 flex justify-between items-end ${isColor ? 'border-t-red-700 border-b-red-700' : ''}`}>
-                                        <div className="flex flex-col">
-                                            <span className="text-black font-black text-xs md:text-sm tracking-[0.3em] mb-2 px-1 font-sans">
-                                                中華民國 {rocYear} 年 {month} 月 {day} 日
-                                            </span>
-                                            <h1 className={`text-6xl md:text-7xl font-black tracking-tight leading-none ${isColor ? 'text-red-700' : 'text-black'}`} style={{ fontFamily: "'Noto Serif TC', serif" }}>
-                                                {newspaperTitle}
-                                            </h1>
-                                        </div>
-                                        <div className={`text-right border-l-4 pl-4 pb-1 ${isColor ? 'border-red-700' : 'border-black'}`}>
-                                            <p className="text-black font-black text-sm tracking-widest uppercase mb-1">{newspaperTaskLabel}</p>
-                                            <p className="text-black font-bold text-xs mb-3">走讀任務第一版</p>
-                                            {/* 復古條碼裝飾 */}
-                                            <div className="h-8 w-24 flex gap-[2px] ml-auto">
-                                                {Array.from({length: 15}).map((_, i) => <div key={i} className={`h-full bg-black ${i % 3 === 0 ? 'w-1.5' : i % 5 === 0 ? 'w-1' : 'w-0.5'}`}></div>)}
+                                                    return (
+                                                        <div key={art.id} className={`article-card p-6 bg-slate-50 border-t-4 border-indigo-500 shadow-sm relative ${isFeatured ? 'col-span-full bg-white border-l-8 border-t-0 shadow-md' : ''}`}>
+                                                            
+                                                            {/* 個別排版微調工具列 */}
+                                                            <div className="print:hidden bg-indigo-50 border border-indigo-100 rounded-lg p-2 mb-4 flex flex-wrap gap-2 items-center text-sm shadow-sm">
+                                                                <LucideIcon name="Settings" size={16} className="text-indigo-400" />
+                                                                <span className="font-bold text-indigo-700">個別排版微調:</span>
+                                                                <input type="text" value={currentTitle} onChange={e => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), title: e.target.value}}))} className="px-2 py-1 rounded border border-indigo-200 flex-grow max-w-[200px] outline-none focus:border-indigo-400" placeholder="自訂標題..." />
+                                                                <select value={currentTitleSize} onChange={e => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), titleSize: e.target.value}}))} className="px-2 py-1 rounded border border-indigo-200 outline-none focus:border-indigo-400 text-slate-600">
+                                                                    <option value="text-xl">字體: 小 (XL)</option>
+                                                                    <option value="text-2xl">字體: 中 (2XL)</option>
+                                                                    <option value="text-3xl">字體: 大 (3XL)</option>
+                                                                    <option value="text-4xl">字體: 特大 (4XL)</option>
+                                                                    <option value="text-5xl">字體: 超大 (5XL)</option>
+                                                                </select>
+                                                            </div>
+
+                                                            <h3 className={`${currentTitleSize} font-black mb-4 leading-tight text-slate-800`}>{currentTitle}</h3>
+                                                            
+                                                            {photos.length > 0 && <div className={`mb-5 flex gap-3 ${isFeatured ? 'justify-center' : 'flex-wrap'}`}>
+                                                                {photos.map(p => {
+                                                                    const defaultPhotoClass = isFeatured ? 'h-64 flex-grow' : 'h-40 flex-grow';
+                                                                    const currentPhotoClass = articleOverrides[art.id]?.photoSizes?.[p.id] ?? defaultPhotoClass;
+                                                                    return (
+                                                                        <div key={p.id} className={`relative group ${currentPhotoClass} min-w-[120px]`}>
+                                                                            <img src={p.url} className={`border border-slate-200 shadow-sm rounded object-cover w-full h-full`} />
+                                                                            <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 print:hidden bg-white/95 p-1.5 rounded-lg shadow-lg border border-slate-200 z-10 flex flex-wrap gap-1 max-w-[140px] backdrop-blur-sm">
+                                                                                <span className="w-full text-[10px] font-black text-slate-500 text-center mb-1">調整圖片尺寸</span>
+                                                                                <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-32 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">小</button>
+                                                                                <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-48 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">中</button>
+                                                                                <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-64 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">大</button>
+                                                                                <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-96 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">特大</button>
+                                                                                <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-auto w-full'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded w-full mt-1 font-bold">滿版</button>
+                                                                            </div>
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                            </div>}
+                                                            
+                                                            <p className={`text-slate-700 leading-relaxed font-sans ${isFeatured ? 'text-lg' : 'text-sm'} whitespace-pre-wrap`}>{displayContent}</p>
+                                                            
+                                                            <div className="mt-5 pt-3 border-t border-slate-200 flex justify-end items-center italic text-xs text-slate-400 font-sans"><span>#{art.name || art.studentName}</span></div>
+                                                        </div>
+                                                    );
+                                                })}
                                             </div>
                                         </div>
-                                    </div>
-
-                                    {/* 報紙內容區塊 */}
-                                    <div className={`news-columns ${layoutIndex === 0 ? 'columns-1 md:columns-2 gap-8' : layoutIndex === 1 ? 'flex flex-col gap-8' : 'grid grid-cols-1 md:grid-cols-2 gap-8'}`}>
-                                        {articles.map((art, idx) => {
-                                            const stuPhotos = (art.studentPhotos || []).map((url, i) => ({ id: `stu_${i}`, url, selected: true }));
-                                            const teaPhotos = (recordPhotos[art.id] || []).filter(p => p.selected);
-                                            const photos = [...stuPhotos, ...teaPhotos];
-                                            const isHeadline = idx === 0;
-
-                                            // 標題覆寫邏輯
-                                            const defaultTitle = `【${art.name || art.studentName}】的觀察紀錄`;
-                                            const currentTitle = articleOverrides[art.id]?.title ?? defaultTitle;
-                                            const defaultTitleSize = isHeadline ? 'text-4xl' : 'text-2xl';
-                                            const currentTitleSize = articleOverrides[art.id]?.titleSize ?? defaultTitleSize;
-
-                                            // 處理內容相容性
-                                            const contentStr = art.content || art.essay || '';
-                                            let displayContent = contentStr;
-                                            if (displayContent.startsWith('【作者：')) {
-                                                const parts = displayContent.split('\n\n');
-                                                if (parts.length > 1) displayContent = parts.slice(1).join('\n\n');
-                                            }
-
-                                            return (
-                                                <div key={art.id} className={`article-card bg-transparent border-b-2 border-black pb-6 relative ${isHeadline ? 'md:col-span-full border-b-4 border-black mb-8' : ''}`}>
-                                                    
-                                                    {/* 個別排版微調工具列 */}
-                                                    <div className="print:hidden bg-indigo-50 border border-indigo-100 rounded-lg p-2 mb-4 flex flex-wrap gap-2 items-center text-sm shadow-sm">
-                                                        <LucideIcon name="Settings" size={16} className="text-indigo-400" />
-                                                        <span className="font-bold text-indigo-700">個別排版微調:</span>
-                                                        <input
-                                                            type="text"
-                                                            value={currentTitle}
-                                                            onChange={e => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), title: e.target.value}}))}
-                                                            className="px-2 py-1 rounded border border-indigo-200 flex-grow max-w-[200px] outline-none focus:border-indigo-400"
-                                                            placeholder="自訂標題..."
-                                                        />
-                                                        <select
-                                                            value={currentTitleSize}
-                                                            onChange={e => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), titleSize: e.target.value}}))}
-                                                            className="px-2 py-1 rounded border border-indigo-200 outline-none focus:border-indigo-400 text-slate-600"
-                                                        >
-                                                            <option value="text-xl">字體: 小 (XL)</option>
-                                                            <option value="text-2xl">字體: 中 (2XL)</option>
-                                                            <option value="text-3xl">字體: 大 (3XL)</option>
-                                                            <option value="text-4xl">字體: 特大 (4XL)</option>
-                                                            <option value="text-5xl">字體: 超大 (5XL)</option>
-                                                            <option value="text-6xl">字體: 巨無霸 (6XL)</option>
-                                                        </select>
-                                                    </div>
-
-                                                    <div className={`flex ${isHeadline ? 'flex-col md:flex-row-reverse gap-8' : 'flex-col gap-4'}`}>
-                                                        
-                                                        {/* 標題 (頭條使用直式排版) */}
-                                                        <div className={`shrink-0 ${isHeadline ? 'border-l-4 border-black pl-6 flex items-start' : 'border-b-2 border-black pb-2'}`}>
-                                                            <h2 className={`font-black font-serif leading-tight ${isHeadline ? 'vertical-text max-h-96' : ''} ${currentTitleSize} ${isColor ? 'text-blue-900' : 'text-black'}`}>
-                                                                {currentTitle}
-                                                            </h2>
-                                                            {isHeadline && <span className={`vertical-text text-2xl font-black mt-4 ${isColor ? 'text-red-600' : 'text-black'}`}>★ 特派記者</span>}
-                                                        </div>
-                                                        
-                                                        {/* 內文與照片 */}
-                                                        <div className="flex-1">
-                                                            {photos.length > 0 && (
-                                                                <div className={`mb-5 flex gap-3 ${isHeadline ? '' : 'flex-wrap'}`}>
-                                                                    {photos.map(p => {
-                                                                        const defaultPhotoClass = isHeadline ? 'h-64 flex-grow' : 'h-40 flex-grow';
-                                                                        const currentPhotoClass = articleOverrides[art.id]?.photoSizes?.[p.id] ?? defaultPhotoClass;
-
-                                                                        return (
-                                                                            <div key={p.id} className={`relative group ${currentPhotoClass} min-w-[120px]`}>
-                                                                                <img src={p.url} className={`${!isColor ? 'grayscale contrast-125' : 'contrast-110 saturate-125'} object-cover border-2 border-black w-full h-full`}/>
-                                                                                {/* 圖片大小微調選單 */}
-                                                                                <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 print:hidden bg-white/95 p-1.5 rounded-lg shadow-lg border border-slate-200 z-10 flex flex-wrap gap-1 max-w-[140px] backdrop-blur-sm">
-                                                                                    <span className="w-full text-[10px] font-black text-slate-500 text-center mb-1">調整圖片尺寸</span>
-                                                                                    <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-32 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">小</button>
-                                                                                    <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-48 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">中</button>
-                                                                                    <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-64 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">大</button>
-                                                                                    <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-96 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">特大</button>
-                                                                                    <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-auto w-full'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded w-full mt-1 font-bold">滿版寬度</button>
-                                                                                </div>
-                                                                            </div>
-                                                                        )
-                                                                    })}
-                                                                </div>
-                                                            )}
-                                                            <p className={`font-bold leading-relaxed text-justify ${isHeadline ? 'text-lg' : 'text-sm'} ${isColor ? 'text-slate-900' : 'text-black'}`} style={{ fontFamily: "'Noto Serif TC', serif" }}>
-                                                                {displayContent}
-                                                            </p>
-                                                            <div className="mt-4 flex justify-end font-black text-[10px] uppercase tracking-widest font-sans">
-                                                                <span className={`text-white px-2 py-0.5 ${isColor ? 'bg-red-700' : 'bg-black'}`}>#{art.name || art.studentName}</span>
-                                                            </div>
-                                                        </div>
-
+                                    ) : (
+                                        /* 復古風格紙本報紙 (黑白/彩色) */
+                                        <div>
+                                            <div className={`border-t-[12px] border-b-4 border-black border-double py-6 mb-8 flex justify-between items-end ${isColor ? 'border-t-red-700 border-b-red-700' : ''}`}>
+                                                <div className="flex flex-col">
+                                                    <span className="text-black font-black text-xs md:text-sm tracking-[0.3em] mb-2 px-1 font-sans">
+                                                        中華民國 {rocYear} 年 {month} 月 {day} 日
+                                                    </span>
+                                                    <h1 className={`text-6xl md:text-7xl font-black tracking-tight leading-none ${isColor ? 'text-red-700' : 'text-black'}`} style={{ fontFamily: "'Noto Serif TC', serif" }}>
+                                                        {newspaperTitle}
+                                                    </h1>
+                                                </div>
+                                                <div className={`text-right border-l-4 pl-4 pb-1 ${isColor ? 'border-red-700' : 'border-black'}`}>
+                                                    <p className="text-black font-black text-sm tracking-widest uppercase mb-1">{newspaperTaskLabel}</p>
+                                                    <p className="text-black font-bold text-xs mb-3">走讀任務第一版</p>
+                                                    <div className="h-8 w-24 flex gap-[2px] ml-auto">
+                                                        {Array.from({length: 15}).map((_, i) => <div key={i} className={`h-full bg-black ${i % 3 === 0 ? 'w-1.5' : i % 5 === 0 ? 'w-1' : 'w-0.5'}`}></div>)}
                                                     </div>
                                                 </div>
-                                            );
-                                        })}
-                                    </div>
+                                            </div>
+
+                                            <div className={layoutClass}>
+                                                {articles.map((art, idx) => {
+                                                    const stuPhotos = (art.studentPhotos || []).map((url, i) => ({ id: `stu_${i}`, url, selected: true }));
+                                                    const teaPhotos = (recordPhotos[art.id] || []).filter(p => p.selected);
+                                                    const photos = [...stuPhotos, ...teaPhotos];
+                                                    const isHeadline = idx === 0 && layoutIndex === 2;
+
+                                                    const defaultTitle = `【${art.name || art.studentName}】的觀察紀錄`;
+                                                    const currentTitle = articleOverrides[art.id]?.title ?? defaultTitle;
+                                                    const defaultTitleSize = isHeadline ? 'text-4xl' : 'text-2xl';
+                                                    const currentTitleSize = articleOverrides[art.id]?.titleSize ?? defaultTitleSize;
+
+                                                    const contentStr = art.content || art.essay || '';
+                                                    let displayContent = contentStr;
+                                                    if (displayContent.startsWith('【作者：')) {
+                                                        const parts = displayContent.split('\n\n');
+                                                        if (parts.length > 1) displayContent = parts.slice(1).join('\n\n');
+                                                    }
+
+                                                    return (
+                                                        <div key={art.id} className={`article-card bg-transparent border-b-2 border-black pb-6 relative ${isHeadline ? 'col-span-full border-b-4 border-black mb-8' : ''}`}>
+                                                            
+                                                            {/* 個別排版微調工具列 */}
+                                                            <div className="print:hidden bg-indigo-50 border border-indigo-100 rounded-lg p-2 mb-4 flex flex-wrap gap-2 items-center text-sm shadow-sm">
+                                                                <LucideIcon name="Settings" size={16} className="text-indigo-400" />
+                                                                <span className="font-bold text-indigo-700">個別排版微調:</span>
+                                                                <input type="text" value={currentTitle} onChange={e => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), title: e.target.value}}))} className="px-2 py-1 rounded border border-indigo-200 flex-grow max-w-[200px] outline-none focus:border-indigo-400" placeholder="自訂標題..." />
+                                                                <select value={currentTitleSize} onChange={e => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), titleSize: e.target.value}}))} className="px-2 py-1 rounded border border-indigo-200 outline-none focus:border-indigo-400 text-slate-600">
+                                                                    <option value="text-xl">字體: 小 (XL)</option>
+                                                                    <option value="text-2xl">字體: 中 (2XL)</option>
+                                                                    <option value="text-3xl">字體: 大 (3XL)</option>
+                                                                    <option value="text-4xl">字體: 特大 (4XL)</option>
+                                                                    <option value="text-5xl">字體: 超大 (5XL)</option>
+                                                                    <option value="text-6xl">字體: 巨霸 (6XL)</option>
+                                                                </select>
+                                                            </div>
+
+                                                            <div className={`flex ${isHeadline ? 'flex-col md:flex-row-reverse gap-8' : 'flex-col gap-4'}`}>
+                                                                
+                                                                <div className={`shrink-0 ${isHeadline ? 'border-l-4 border-black pl-6 flex items-start' : 'border-b-2 border-black pb-2'}`}>
+                                                                    <h2 className={`font-black font-serif leading-tight ${isHeadline ? 'vertical-text max-h-96' : ''} ${currentTitleSize} ${isColor ? 'text-blue-900' : 'text-black'}`}>
+                                                                        {currentTitle}
+                                                                    </h2>
+                                                                    {isHeadline && <span className={`vertical-text text-2xl font-black mt-4 ${isColor ? 'text-red-600' : 'text-black'}`}>★ 特派記者</span>}
+                                                                </div>
+                                                                
+                                                                <div className="flex-1">
+                                                                    {photos.length > 0 && (
+                                                                        <div className={`mb-5 flex gap-3 ${isHeadline ? '' : 'flex-wrap'}`}>
+                                                                            {photos.map(p => {
+                                                                                const defaultPhotoClass = isHeadline ? 'h-64 flex-grow' : 'h-40 flex-grow';
+                                                                                const currentPhotoClass = articleOverrides[art.id]?.photoSizes?.[p.id] ?? defaultPhotoClass;
+
+                                                                                return (
+                                                                                    <div key={p.id} className={`relative group ${currentPhotoClass} min-w-[120px]`}>
+                                                                                        <img src={p.url} className={`${!isColor ? 'grayscale contrast-125' : 'contrast-110 saturate-125'} object-cover border-2 border-black w-full h-full`}/>
+                                                                                        <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 print:hidden bg-white/95 p-1.5 rounded-lg shadow-lg border border-slate-200 z-10 flex flex-wrap gap-1 max-w-[140px] backdrop-blur-sm">
+                                                                                            <span className="w-full text-[10px] font-black text-slate-500 text-center mb-1">調整圖片尺寸</span>
+                                                                                            <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-32 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">小</button>
+                                                                                            <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-48 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">中</button>
+                                                                                            <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-64 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">大</button>
+                                                                                            <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-96 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">特大</button>
+                                                                                            <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-auto w-full'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded w-full mt-1 font-bold">滿版</button>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                )
+                                                                            })}
+                                                                        </div>
+                                                                    )}
+                                                                    <p className={`font-bold leading-relaxed text-justify ${isHeadline ? 'text-lg' : 'text-sm'} ${isColor ? 'text-slate-900' : 'text-black'}`} style={{ fontFamily: "'Noto Serif TC', serif" }}>
+                                                                        {displayContent}
+                                                                    </p>
+                                                                    <div className="mt-4 flex justify-end font-black text-[10px] uppercase tracking-widest font-sans">
+                                                                        <span className={`text-white px-2 py-0.5 ${isColor ? 'bg-red-700' : 'bg-black'}`}>#{art.name || art.studentName}</span>
+                                                                    </div>
+                                                                </div>
+
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                            )}
+                            </div>
                         </div>
                     </div>
                 );
@@ -938,7 +816,7 @@
             if (view === 'teacher_create') return <TeacherCreateView setView={setView} missionSetup={missionSetup} setMissionSetup={setMissionSetup} processAI={processAI} isProcessingAI={isProcessingAI} createMission={createMission} />;
             if (view === 'student_join') return <StudentJoinView setView={setView} roomCodeInput={roomCodeInput} setRoomCodeInput={setRoomCodeInput} joinMission={joinMission} />;
             if (view === 'teacher_login') return <TeacherLoginView setView={setView} roomCodeInput={roomCodeInput} setRoomCodeInput={setRoomCodeInput} enterDashboard={enterDashboard} />;
-            if (view === 'student_record') return <StudentRecordView setView={setView} />; // Fallback if somehow not matched
+            if (view === 'student_record') return <StudentRecordView setView={setView} />; 
             return null;
         }
 
@@ -997,7 +875,7 @@
             </div>
         );
 
-        const StudentRecordView = ({ setView }) => null; // Placeholder as actual is rendered inline above
+        const StudentRecordView = ({ setView }) => null; 
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
