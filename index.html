@@ -13,16 +13,42 @@
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Noto+Serif+TC:wght@700;900&display=swap');
         body { font-family: 'Noto Sans TC', sans-serif; background-color: #f8fafc; }
         .font-serif { font-family: 'Noto Serif TC', serif; }
-        .newspaper-container { column-gap: 2rem; orphans: 1; widows: 1; }
-        .article-card { break-inside: avoid; margin-bottom: 2rem; }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-        .vertical-text { writing-mode: vertical-rl; }
+        
+        /* A4 實體報紙排版引擎 */
+        .a4-paper-wrapper {
+            width: 210mm;
+            min-height: 297mm;
+            margin: 0 auto;
+            background: white;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+            padding: 15mm;
+            box-sizing: border-box;
+        }
+        
+        /* 報紙欄位與直式排版 */
+        .news-columns { column-gap: 6mm; orphans: 1; widows: 1; }
+        .vertical-text { 
+            writing-mode: vertical-rl; 
+            text-orientation: upright;
+            letter-spacing: 0.1em;
+        }
+        .article-card { break-inside: avoid; margin-bottom: 6mm; }
+
         @media print { 
+            @page { size: A4 portrait; margin: 15mm; }
+            body { background: white; padding: 0; margin: 0; } 
             .print\:hidden { display: none !important; } 
-            body { background: white; padding: 0; } 
             .print-exact { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .a4-paper-wrapper {
+                width: 100%;
+                min-height: auto;
+                margin: 0;
+                padding: 0;
+                box-shadow: none;
+            }
         }
     </style>
 </head>
@@ -47,17 +73,17 @@
         const { useState, useEffect, useRef } = React;
 
         // ==========================================
-        // ⚠️ Firebase 金鑰
+        // Firebase 正式設定檔
         // ==========================================
         const MY_FIREBASE_CONFIG = {
-          apiKey: "AIzaSyC3zxvUPk1BGS6kTmLaSCROIQtrDxREXD8",
-          authDomain: "tainan-walk-app.firebaseapp.com",
-          projectId: "tainan-walk-app",
-          storageBucket: "tainan-walk-app.firebasestorage.app",
-          messagingSenderId: "129998651381",
-          appId: "1:129998651381:web:e4e590897dbc36474a2abc",
-          measurementId: "G-1DY86P0Y1Y"
-        }; 
+            apiKey: "AIzaSyC3zxvUPk1BGS6kTmlaSCRoIQtrDxREXd8",
+            authDomain: "tainan-walk-app.firebaseapp.com",
+            projectId: "tainan-walk-app",
+            storageBucket: "tainan-walk-app.firebasestorage.app",
+            messagingSenderId: "129998651381",
+            appId: "1:129998651381:web:e4e590897dbc36474a2abc",
+            measurementId: "G-1DY86P0Y1Y"
+        };
         const GEMINI_API_KEY = ""; 
 
         let appInstance, authInstance, dbInstance, resolvedAppId;
@@ -73,6 +99,7 @@
             console.error("Firebase init error", e);
         }
 
+        // 基礎設定
         const DEFAULT_LOCATIONS = ['資源班', '南美館', '奇美博物館', '林百貨', '安平古堡', '台灣文學館', '文青麵店', '四草綠色隧道', '府中街', '臺灣銀行'];
         const DEFAULT_TARGETS = ['抓面磚', '顛倒的布幣花磚', 'AI 點餐系統', '萬字紋或菊花', '十三溝面磚', '日本福神臉譜', '竹筍柱或迷宮柱頭', '神桌上的食物', '外國紙幣', '馬賽克桌面', '自己發現的其他東西'];
 
@@ -104,6 +131,7 @@
             return <span ref={containerRef} className="inline-flex items-center justify-center"></span>;
         };
 
+        // 圖片壓縮輔助函數
         const compressImage = (file, callback) => {
             if (!file) return;
             const reader = new FileReader();
@@ -125,18 +153,27 @@
             };
         };
 
+        // ==========================================
+        // 主應用程式
+        // ==========================================
         function App() {
-            const [isOffline] = useState(!appInstance);
+            const [isOffline, setIsOffline] = useState(!appInstance);
+            const [user, setUser] = useState(null);
             const [view, setView] = useState('home');
             
+            // 首頁 QR Code 網址狀態
             const [pageUrl, setPageUrl] = useState('');
-            useEffect(() => { setPageUrl(window.location.href.split('#')[0]); }, []);
+            useEffect(() => {
+                setPageUrl(window.location.href.split('#')[0]);
+            }, []);
             
+            // 任務派發狀態
             const [currentMission, setCurrentMission] = useState(null); 
             const [roomCodeInput, setRoomCodeInput] = useState('');
             const [missionSetup, setMissionSetup] = useState({ name: '', date: new Date().toISOString().split('T')[0], code: '', draft: '', locations: [], targets: [] });
             const [isProcessingAI, setIsProcessingAI] = useState(false);
 
+            // 學生紀錄狀態 
             const [studentName, setStudentName] = useState('');
             const [mode, setMode] = useState('beginner');
             const [tempBegData, setTempBegData] = useState({ 
@@ -148,48 +185,67 @@
                 id: Date.now(), location: '', target: '', sense: '', obs: '', meta: '', feelings: [], customFeeling: '', photo: null
             }]);
             
+            // 預覽與送出
             const [showModal, setShowModal] = useState(false);
             const [generatedEssay, setGeneratedEssay] = useState('');
             const [generatedFileName, setGeneratedFileName] = useState('');
 
+            // 語音
             const [activeMic, setActiveMic] = useState(null);
             const activeMicRef = useRef(null);
             useEffect(() => { activeMicRef.current = activeMic; }, [activeMic]);
             const [focusedFeeling, setFocusedFeeling] = useState(null);
             const recognitionRef = useRef(null);
 
+            // 資料庫數據與版面控制
             const [allRecords, setAllRecords] = useState([]);
             const [selectedRecords, setSelectedRecords] = useState([]);
             const [recordPhotos, setRecordPhotos] = useState({});
-            const [layoutIndex, setLayoutIndex] = useState(0);
-            const [themeStyle, setThemeStyle] = useState('modern');
+            
+            // 新增排版與風格控制
+            const [columnsCount, setColumnsCount] = useState(2); // 1, 2, 3 欄
+            const [themeStyle, setThemeStyle] = useState('retro-color'); // 'retro-color' | 'retro-bw' | 'modern'
 
+            // 老師編輯學生紀錄狀態
             const [editingRecordId, setEditingRecordId] = useState(null);
             const [editingContent, setEditingContent] = useState('');
 
-            // 權限驗證只做背景動作，不再阻擋主程式
+            // 權限驗證與資料監聽
             useEffect(() => {
-                if (authInstance) {
-                    signInAnonymously(authInstance).catch(e => console.warn("背景登入提醒:", e));
-                }
+                if (!authInstance) return;
+                const initAuth = async () => {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(authInstance, __initial_auth_token);
+                        else await signInAnonymously(authInstance);
+                    } catch (e) { 
+                        console.error("Auth init error:", e);
+                        setIsOffline(true);
+                    }
+                };
+                initAuth();
+                const unsubscribe = onAuthStateChanged(authInstance, (u) => { setUser(u); });
+                return () => unsubscribe();
             }, []);
 
-            // 💡 資料監聽：直接拿掉 user 限制！不管有沒有登入成功，直接去抓資料！
             useEffect(() => {
-                if (dbInstance) {
+                if (dbInstance && user && !isOffline) {
                     const q = collection(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'walk_records');
                     const unsubscribe = onSnapshot(q, (snapshot) => {
                         const recs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                         recs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
                         setAllRecords(recs);
-                    }, (e) => { console.error("Firestore permission error:", e); });
+                    }, (e) => { 
+                        console.warn("Firestore permission error, switching to offline:", e);
+                        setIsOffline(true);
+                    });
                     return () => unsubscribe();
                 } else if (isOffline) {
                     const stored = JSON.parse(localStorage.getItem('walk_records') || '[]');
                     setAllRecords(stored);
                 }
-            }, [isOffline]);
+            }, [user, isOffline]);
 
+            // 語音邏輯
             useEffect(() => {
                 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
                 if (SpeechRecognition) {
@@ -234,6 +290,7 @@
                 }
             };
 
+            // 老師開課邏輯
             const processAI = async () => {
                 if (!missionSetup.draft.trim()) return;
                 setIsProcessingAI(true);
@@ -269,8 +326,17 @@
                     createdAt: new Date().toISOString()
                 };
 
-                if (dbInstance) {
-                    await setDoc(doc(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'missions', missionData.code), missionData);
+                if (dbInstance && !isOffline) {
+                    if (!user) return alert("權限尚未準備好，請稍等一秒再試...");
+                    try {
+                        await setDoc(doc(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'missions', missionData.code), missionData);
+                    } catch (e) {
+                        console.warn("無法寫入雲端，切換至單機模式保存", e);
+                        setIsOffline(true);
+                        const storedMissions = JSON.parse(localStorage.getItem('missions') || '{}');
+                        storedMissions[missionData.code] = missionData;
+                        localStorage.setItem('missions', JSON.stringify(storedMissions));
+                    }
                 } else {
                     const storedMissions = JSON.parse(localStorage.getItem('missions') || '{}');
                     storedMissions[missionData.code] = missionData;
@@ -281,13 +347,21 @@
                 setView('home');
             };
 
+            // 學生加入與紀錄
             const joinMission = async () => {
                 if (!roomCodeInput.trim()) return alert("請輸入任務代碼");
                 
                 let missionData = null;
-                if (dbInstance) {
-                    const docSnap = await getDoc(doc(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'missions', roomCodeInput));
-                    if (docSnap.exists()) missionData = docSnap.data();
+                if (dbInstance && !isOffline) {
+                    if (!user) return alert("連線中，請稍候...");
+                    try {
+                        const docSnap = await getDoc(doc(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'missions', roomCodeInput));
+                        if (docSnap.exists()) missionData = docSnap.data();
+                    } catch (e) {
+                        setIsOffline(true);
+                        const storedMissions = JSON.parse(localStorage.getItem('missions') || '{}');
+                        missionData = storedMissions[roomCodeInput];
+                    }
                 } else {
                     const storedMissions = JSON.parse(localStorage.getItem('missions') || '{}');
                     missionData = storedMissions[roomCodeInput];
@@ -302,13 +376,7 @@
             };
 
             const joinFreeExplore = () => {
-                setCurrentMission({
-                    code: 'FREE',
-                    name: '自由探索 (免代碼)',
-                    locations: DEFAULT_LOCATIONS,
-                    targets: DEFAULT_TARGETS,
-                    date: new Date().toISOString().split('T')[0]
-                });
+                setCurrentMission({ code: 'FREE', name: '自由探索 (免代碼)', locations: DEFAULT_LOCATIONS, targets: DEFAULT_TARGETS, date: new Date().toISOString().split('T')[0] });
                 setView('student_record');
             };
 
@@ -320,16 +388,12 @@
                     SENSE_OPTIONS.forEach(s => {
                         const combinedFeelings = [...(tempBegData.feelings[s.id] || [])];
                         if (tempBegData.customFeelings[s.id]) combinedFeelings.push(tempBegData.customFeelings[s.id]);
-                        
-                        if (tempBegData[s.id] || combinedFeelings.length > 0) {
-                            essay += `${s.label}「${tempBegData[s.id]}」，感覺「${combinedFeelings.join('、')}」。\n`;
-                        }
+                        if (tempBegData[s.id] || combinedFeelings.length > 0) essay += `${s.label}「${tempBegData[s.id]}」，感覺「${combinedFeelings.join('、')}」。\n`;
                     });
                 } else {
                     tempAdvRecords.forEach((r, idx) => {
                         const combinedFeelings = [...r.feelings];
                         if (r.customFeeling) combinedFeelings.push(r.customFeeling);
-                        
                         if (r.target) essay += `（發現 ${idx+1}）在「${r.location}」探索「${r.target}」。透過「${r.sense}」，發現了「${r.obs}」，覺得它「${r.meta}」，心情「${combinedFeelings.join('、')}」。\n\n`;
                     });
                 }
@@ -341,32 +405,31 @@
 
             const submitRecord = async () => {
                 let studentPhotos = [];
-                if (mode === 'beginner') {
-                    Object.values(tempBegData.photos).forEach(url => { if(url) studentPhotos.push(url); });
-                } else {
-                    tempAdvRecords.forEach(r => { if(r.photo) studentPhotos.push(r.photo); });
-                }
+                if (mode === 'beginner') Object.values(tempBegData.photos).forEach(url => { if(url) studentPhotos.push(url); });
+                else tempAdvRecords.forEach(r => { if(r.photo) studentPhotos.push(r.photo); });
 
                 const newRec = {
                     id: Date.now().toString(),
-                    missionCode: currentMission.code,
-                    name: studentName,
-                    mode: mode,
-                    content: generatedEssay,
-                    fileName: generatedFileName,
-                    studentPhotos: studentPhotos,
+                    missionCode: currentMission.code, name: studentName, mode: mode,
+                    content: generatedEssay, fileName: generatedFileName, studentPhotos: studentPhotos,
                     createdAt: new Date().toISOString()
                 };
 
-                if (dbInstance) {
-                    await setDoc(doc(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'walk_records', newRec.id), newRec);
+                if (dbInstance && !isOffline) {
+                    try { await setDoc(doc(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'walk_records', newRec.id), newRec); } 
+                    catch (e) {
+                        setIsOffline(true);
+                        const stored = JSON.parse(localStorage.getItem('walk_records') || '[]');
+                        localStorage.setItem('walk_records', JSON.stringify([newRec, ...stored]));
+                        setAllRecords([newRec, ...stored]);
+                    }
                 } else {
                     const stored = JSON.parse(localStorage.getItem('walk_records') || '[]');
                     localStorage.setItem('walk_records', JSON.stringify([newRec, ...stored]));
                     setAllRecords([newRec, ...stored]);
                 }
 
-                alert("紀錄已成功送入老師的資料庫！太棒了！");
+                alert("紀錄已成功送出！");
                 setStudentName('');
                 setTempBegData({ see: '', touch: '', taste: '', hear: '', feelings: {}, customFeelings: { see: '', touch: '', taste: '', hear: '' }, photos: { see: null, touch: null, taste: null, hear: null } });
                 setTempAdvRecords([{ id: Date.now(), location: currentMission.locations[0] || '', target: '', sense: '', obs: '', meta: '', feelings: [], customFeeling: '', photo: null }]);
@@ -379,28 +442,16 @@
                 setCurrentMission({ code: roomCodeInput }); 
                 setView('teacher_dashboard');
             };
-            
-            const enterDashboardAll = () => {
-                setCurrentMission({ code: 'ALL', name: '所有紀錄' }); 
-                setView('teacher_dashboard');
-            };
+            const enterDashboardAll = () => { setCurrentMission({ code: 'ALL', name: '所有紀錄' }); setView('teacher_dashboard'); };
 
+            // 老師編輯邏輯
             const saveEdit = async (id) => {
                 if (dbInstance && !isOffline) {
-                    try {
-                        await updateDoc(doc(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'walk_records', id), {
-                            content: editingContent
-                        });
-                    } catch (e) {
-                        console.warn("無法更新雲端，切換至單機模式保存", e);
-                        updateLocalRecord(id, editingContent);
-                    }
-                } else {
-                    updateLocalRecord(id, editingContent);
-                }
+                    try { await updateDoc(doc(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'walk_records', id), { content: editingContent }); } 
+                    catch (e) { updateLocalRecord(id, editingContent); setIsOffline(true); }
+                } else { updateLocalRecord(id, editingContent); }
                 setEditingRecordId(null);
             };
-
             const updateLocalRecord = (id, newContent) => {
                 const stored = JSON.parse(localStorage.getItem('walk_records') || '[]');
                 const updated = stored.map(r => r.id === id ? { ...r, content: newContent } : r);
@@ -408,22 +459,17 @@
                 setAllRecords(updated);
             };
 
+            // ==========================================
+            // 視圖渲染區塊
+            // ==========================================
+            
             if (view === 'home') return (
                 <div className="min-h-screen flex flex-col items-center justify-center p-6 relative">
                     {isOffline && <div className="absolute top-0 left-0 right-0 bg-amber-100 text-amber-800 text-center py-2 font-bold text-sm z-50">⚠️ 目前為單機模式（無資料庫）。資料僅存在這台平板中，若要跨平板傳輸，請在程式碼中填寫 Firebase 設定。</div>}
                     
                     <div className={`absolute ${isOffline ? 'top-14' : 'top-6'} right-6 bg-white p-3 md:p-4 rounded-2xl shadow-lg border border-slate-100 flex-col items-center z-40 hidden sm:flex hover:shadow-xl transition-all`}>
-                        <p className="text-xs md:text-sm font-bold text-indigo-600 mb-2 flex items-center">
-                            <LucideIcon name="QrCode" size={16} className="mr-1" />
-                            掃碼開啟平台
-                        </p>
-                        {pageUrl && (
-                            <img 
-                                src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(pageUrl)}&margin=1`} 
-                                alt="QR Code" 
-                                className="w-24 h-24 md:w-32 md:h-32 rounded-xl border border-slate-100" 
-                            />
-                        )}
+                        <p className="text-xs md:text-sm font-bold text-indigo-600 mb-2 flex items-center"><LucideIcon name="QrCode" size={16} className="mr-1" />掃碼開啟平台</p>
+                        {pageUrl && <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(pageUrl)}&margin=1`} alt="QR Code" className="w-24 h-24 md:w-32 md:h-32 rounded-xl border border-slate-100" />}
                     </div>
 
                     <div className="text-center mb-12 mt-8">
@@ -456,7 +502,7 @@
                             <div>
                                 <div className="bg-amber-100 text-amber-600 w-16 h-16 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform"><LucideIcon name="Database" size={32}/></div>
                                 <h2 className="text-2xl font-black text-slate-800 mb-2">3. 老師後台</h2>
-                                <p className="text-slate-500 mb-6">檢視學生的繳交紀錄，生成特刊電子報。</p>
+                                <p className="text-slate-500 mb-6">檢視學生的紀錄，生成A4特刊電子報。</p>
                             </div>
                             <div className="space-y-3">
                                 <button onClick={() => setView('teacher_login')} className="w-full bg-slate-800 text-white py-3 rounded-xl font-bold shadow-md hover:bg-slate-700 transition-colors">輸入任務代碼</button>
@@ -467,6 +513,9 @@
                 </div>
             );
 
+            // ==========================================
+            // 視圖渲染：學生端紀錄 (Student Record)
+            // ==========================================
             if (view === 'student_record') return (
                 <div className="max-w-5xl mx-auto p-4 md:p-6 pb-32">
                     <div className="flex justify-between items-center mb-6 px-2">
@@ -490,6 +539,7 @@
                         <div className="space-y-8">
                             {SENSE_OPTIONS.map(s => (
                                 <div key={s.id} className="bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row overflow-hidden">
+                                    {/* 左半邊：觀察與輸入區 */}
                                     <div className="md:w-1/2 p-6 md:p-8 border-b md:border-b-0 md:border-r border-slate-100 flex flex-col bg-white">
                                         <div className="flex-grow">
                                             <div className="flex items-center mb-6">
@@ -538,6 +588,7 @@
                                         </div>
                                     </div>
 
+                                    {/* 右半邊：感覺標籤區 */}
                                     <div className="md:w-1/2 p-6 md:p-8 bg-slate-50 flex flex-col">
                                         <div className="flex-grow">
                                             <div className="flex justify-between items-center mb-10">
@@ -718,6 +769,9 @@
                 </div>
             );
 
+            // ==========================================
+            // 視圖：老師管理端與電子報
+            // ==========================================
             if (view === 'teacher_dashboard') {
                 const taskRecords = currentMission?.code === 'ALL' 
                     ? allRecords 
@@ -809,92 +863,119 @@
                 );
             }
 
+            // ==========================================
+            // 視圖渲染：電子報 / A4 報紙預覽
+            // ==========================================
             if (view === 'newsletter') {
                 const articles = allRecords.filter(r => selectedRecords.includes(r.id));
+                const isRetro = themeStyle === 'retro-bw' || themeStyle === 'retro-color';
+                const isColor = themeStyle === 'retro-color';
+
                 return (
-                    <div className="min-h-screen bg-stone-100 p-4 md:p-12 font-serif">
-                        <div className="max-w-6xl mx-auto">
-                            <div className="flex justify-between items-center mb-10 print:hidden flex-wrap gap-4">
-                                <button onClick={() => setView('teacher_dashboard')} className="bg-white px-6 py-2 rounded-xl flex items-center font-sans shadow-md hover:bg-slate-50 transition-all"><LucideIcon name="ArrowLeft" className="mr-2"/> 返回資料庫</button>
-                                <div className="flex gap-3 flex-wrap">
-                                    <button onClick={() => setThemeStyle(t => t === 'modern' ? 'retro' : 'modern')} className="bg-emerald-500 text-white px-6 py-2 rounded-xl flex items-center font-sans shadow-md hover:bg-emerald-600 transition-all"><LucideIcon name="Palette" className="mr-2"/> {themeStyle === 'modern' ? '切換為復古報紙' : '切換為現代電子報'}</button>
-                                    <button onClick={() => setLayoutIndex((layoutIndex + 1) % 3)} className="bg-amber-500 text-white px-6 py-2 rounded-xl flex items-center font-sans shadow-md hover:bg-amber-600 transition-all"><LucideIcon name="RefreshCw" className="mr-2"/> 🔄 重整版面 (變換樣式)</button>
-                                    <button onClick={() => window.print()} className="bg-indigo-600 text-white px-6 py-2 rounded-xl flex items-center font-sans shadow-md hover:bg-indigo-700 transition-all"><LucideIcon name="Printer" className="mr-2"/> 列印 / 下載 PDF</button>
-                                </div>
+                    <div className="min-h-screen bg-stone-200 p-4 md:p-8 font-serif">
+                        <div className="max-w-6xl mx-auto mb-8 print:hidden flex justify-between items-center flex-wrap gap-4 bg-white/80 p-4 rounded-2xl backdrop-blur-sm shadow-sm border border-white">
+                            <button onClick={() => setView('teacher_dashboard')} className="bg-white px-5 py-2.5 rounded-xl flex items-center font-sans font-bold text-slate-600 shadow-sm border hover:bg-slate-50 transition-all"><LucideIcon name="ArrowLeft" className="mr-2" size={18}/> 返回資料庫</button>
+                            <div className="flex gap-3 flex-wrap">
+                                <button onClick={() => {
+                                    const themes = ['modern', 'retro-bw', 'retro-color'];
+                                    setThemeStyle(themes[(themes.indexOf(themeStyle) + 1) % themes.length]);
+                                }} className="bg-emerald-500 text-white px-5 py-2.5 rounded-xl flex items-center font-sans font-bold shadow-md hover:bg-emerald-600 transition-all">
+                                    <LucideIcon name="Palette" className="mr-2" size={18}/> 
+                                    {themeStyle === 'modern' ? '切換：復古黑白報' : themeStyle === 'retro-bw' ? '切換：復古彩色報' : '切換：現代電子報'}
+                                </button>
+                                <button onClick={() => setLayoutIndex((layoutIndex + 1) % 3)} className="bg-amber-500 text-white px-5 py-2.5 rounded-xl flex items-center font-sans font-bold shadow-md hover:bg-amber-600 transition-all">
+                                    <LucideIcon name="LayoutTemplate" className="mr-2" size={18}/> 變換排版
+                                </button>
+                                <button onClick={() => window.print()} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl flex items-center font-sans font-bold shadow-md hover:bg-indigo-700 transition-all">
+                                    <LucideIcon name="Printer" className="mr-2" size={18}/> 輸出 A4 報紙
+                                </button>
                             </div>
-                            
-                            {themeStyle === 'modern' ? (
-                                <div className="bg-white p-8 md:p-16 shadow-2xl border border-stone-300 print:shadow-none print:p-0">
-                                    <div className="border-b-8 border-double border-black text-center pb-8 mb-12">
-                                        <h1 className="text-6xl font-black mb-3 tracking-wider">寶石小偵探特刊</h1>
-                                        <p className="text-xl text-stone-600 uppercase tracking-[0.4em] font-sans">Task Code: {currentMission?.code || 'N/A'} • {new Date().toLocaleDateString()}</p>
+                        </div>
+                        
+                        {/* A4 實體報紙預覽容器 */}
+                        <div className="a4-paper-wrapper">
+                            {!isRetro ? (
+                                /* 現代風格電子報 */
+                                <div className="h-full">
+                                    <div className="border-b-8 border-double border-indigo-900 text-center pb-8 mb-10">
+                                        <h1 className="text-5xl font-black mb-4 tracking-wider text-indigo-900">寶石小偵探特刊</h1>
+                                        <p className="text-lg text-slate-500 uppercase tracking-[0.3em] font-sans font-bold">Task: {currentMission?.code || 'N/A'} • {new Date().toLocaleDateString()}</p>
                                     </div>
-                                    <div className={`newspaper-container ${layoutIndex === 0 ? 'columns-1 md:columns-2' : layoutIndex === 1 ? 'flex flex-col gap-12' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'}`}>
+                                    <div className={`news-columns ${layoutIndex === 0 ? 'columns-1 md:columns-2' : layoutIndex === 1 ? 'flex flex-col' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
                                         {articles.map((art, idx) => {
                                             const stuPhotos = (art.studentPhotos || []).map((url, i) => ({ id: `stu_${i}`, url, selected: true }));
                                             const teaPhotos = (recordPhotos[art.id] || []).filter(p => p.selected);
                                             const photos = [...stuPhotos, ...teaPhotos];
                                             const isFeatured = layoutIndex === 2 && idx === 0;
                                             return (
-                                                <div key={art.id} className={`article-card p-6 bg-stone-50 border-t-4 border-stone-800 shadow-sm relative ${isFeatured ? 'md:col-span-full bg-white border-l-8 border-t-0 border-indigo-900 shadow-xl' : ''}`}>
-                                                    <div className={`absolute top-0 left-0 w-full h-1 ${art.mode === 'beginner' ? 'bg-emerald-600' : 'bg-indigo-800'}`}></div>
-                                                    <h3 className={`${isFeatured ? 'text-4xl' : 'text-2xl'} font-black mb-4 leading-tight`}>【{art.name}】的感官發現</h3>
-                                                    {photos.length > 0 && <div className={`mb-6 flex flex-wrap gap-3 ${isFeatured ? 'justify-center' : ''}`}>{photos.map(p => <img key={p.id} src={p.url} className={`${isFeatured ? 'h-80 w-auto' : 'h-40 flex-grow'} object-cover rounded border-2 border-white shadow-md`}/>)}</div>}
-                                                    <p className={`text-stone-800 leading-relaxed font-sans ${isFeatured ? 'text-xl' : 'text-base'} whitespace-pre-wrap`}>{art.content.split('\n\n').slice(1).join('\n\n')}</p>
-                                                    <div className="mt-4 pt-4 border-t border-stone-200 flex justify-between items-center italic text-[10px] text-stone-400"><span>版別：{art.mode === 'beginner' ? '初階版' : '深度進階版'}</span><span>代碼：{art.missionCode || '自由'}</span></div>
+                                                <div key={art.id} className={`article-card p-6 bg-slate-50 border-t-4 border-indigo-500 shadow-sm relative ${isFeatured ? 'md:col-span-full bg-white border-l-8 border-t-0 shadow-md' : ''}`}>
+                                                    <h3 className={`${isFeatured ? 'text-3xl' : 'text-xl'} font-black mb-4 leading-tight text-slate-800`}>【{art.name}】的感官發現</h3>
+                                                    {photos.length > 0 && <div className={`mb-5 flex flex-wrap gap-3 ${isFeatured ? 'justify-center' : ''}`}>{photos.map(p => <img key={p.id} src={p.url} className={`${isFeatured ? 'h-64 w-auto' : 'h-40 flex-grow'} object-cover rounded border border-slate-200 shadow-sm`}/>)}</div>}
+                                                    <p className={`text-slate-700 leading-relaxed font-sans ${isFeatured ? 'text-lg' : 'text-sm'} whitespace-pre-wrap`}>{art.content.split('\n\n').slice(1).join('\n\n')}</p>
+                                                    <div className="mt-5 pt-3 border-t border-slate-200 flex justify-between items-center italic text-xs text-slate-400 font-sans"><span>{art.mode === 'beginner' ? '初階版' : '深度進階版'}</span><span>#{art.missionCode || 'FREE'}</span></div>
                                                 </div>
                                             );
                                         })}
                                     </div>
                                 </div>
                             ) : (
-                                <div className="bg-white p-6 md:p-12 border-8 border-black shadow-[12px_12px_0px_0px_rgba(0,0,0,0.1)] print:shadow-none print:border-none print:p-0 relative print-exact">
-                                    <div className="border-b-8 border-black pb-6 mb-8 flex justify-between items-stretch">
+                                /* 復古風格紙本報紙 (黑白/彩色) */
+                                <div className="h-full relative print-exact">
+                                    {/* 傳統報頭區塊 */}
+                                    <div className={`border-t-[12px] border-b-4 border-black border-double py-6 mb-8 flex justify-between items-end ${isColor ? 'border-t-red-700 border-b-red-700' : ''}`}>
                                         <div className="flex flex-col">
-                                            <span className="text-black font-black text-sm md:text-base tracking-[0.2em] border-b-4 border-black inline-block mb-3 px-2 py-1 uppercase">--- 寶石鑑定 初版 ---</span>
-                                            <h1 className="text-6xl md:text-8xl font-black text-black tracking-tighter leading-none" style={{ fontFamily: "'Noto Serif TC', serif" }}>每日<br/>發見</h1>
+                                            <span className="text-black font-black text-xs md:text-sm tracking-[0.3em] mb-2 px-1 font-sans">
+                                                中華民國 {new Date().getFullYear() - 1911} 年 {new Date().getMonth() + 1} 月 {new Date().getDate()} 日
+                                            </span>
+                                            <h1 className={`text-6xl md:text-7xl font-black tracking-tight leading-none ${isColor ? 'text-red-700' : 'text-black'}`} style={{ fontFamily: "'Noto Serif TC', serif" }}>
+                                                寶石鑑定日報
+                                            </h1>
                                         </div>
-                                        <div className="flex flex-col items-end justify-between">
-                                            <div className="text-right mb-4">
-                                                <p className="bg-black text-white px-3 py-1 font-bold text-lg inline-block transform -rotate-2 border-2 border-white outline outline-2 outline-black">100% 大成功！</p>
-                                            </div>
-                                            <div className="text-right flex flex-col items-end">
-                                                <div className="h-12 w-24 md:w-32 mb-2" style={{ backgroundImage: 'repeating-linear-gradient(to right, #000 0, #000 2px, transparent 2px, transparent 4px, #000 4px, #000 5px, transparent 5px, transparent 8px, #000 8px, #000 12px, transparent 12px, transparent 14px)', backgroundSize: '30px 100%' }}></div>
-                                                <p className="text-black font-bold text-sm tracking-widest uppercase">TASK: {currentMission?.code || 'FREE'}</p>
-                                                <p className="text-black font-bold text-sm">{new Date().toLocaleDateString()}</p>
+                                        <div className={`text-right border-l-4 pl-4 pb-1 ${isColor ? 'border-red-700' : 'border-black'}`}>
+                                            <p className="text-black font-black text-sm tracking-widest uppercase mb-1">TASK: {currentMission?.code || 'FREE'}</p>
+                                            <p className="text-black font-bold text-xs mb-3">走讀任務第一版</p>
+                                            {/* 復古條碼裝飾 */}
+                                            <div className="h-8 w-24 flex gap-[2px] ml-auto">
+                                                {Array.from({length: 15}).map((_, i) => <div key={i} className={`h-full bg-black ${i % 3 === 0 ? 'w-1.5' : i % 5 === 0 ? 'w-1' : 'w-0.5'}`}></div>)}
                                             </div>
                                         </div>
                                     </div>
 
-                                    <div className={`newspaper-container ${layoutIndex === 0 ? 'columns-1 md:columns-2 gap-8' : layoutIndex === 1 ? 'flex flex-col gap-10' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'}`}>
+                                    {/* 報紙內容區塊 */}
+                                    <div className={`news-columns ${layoutIndex === 0 ? 'columns-1 md:columns-2 gap-8' : layoutIndex === 1 ? 'flex flex-col gap-8' : 'grid grid-cols-1 md:grid-cols-2 gap-8'}`}>
                                         {articles.map((art, idx) => {
                                             const stuPhotos = (art.studentPhotos || []).map((url, i) => ({ id: `stu_${i}`, url, selected: true }));
                                             const teaPhotos = (recordPhotos[art.id] || []).filter(p => p.selected);
                                             const photos = [...stuPhotos, ...teaPhotos];
-                                            const isFeatured = layoutIndex === 2 && idx === 0;
+                                            const isHeadline = idx === 0;
 
                                             return (
-                                                <div key={art.id} className={`article-card p-5 bg-white border-4 border-black mb-8 relative ${isFeatured ? 'md:col-span-full border-8 p-8' : ''}`}>
-                                                    <div className="flex items-start justify-between mb-4">
-                                                        <h3 className={`bg-black text-white inline-block px-4 py-2 font-black ${isFeatured ? 'text-4xl' : 'text-2xl'}`}>
-                                                            【{art.name}】的觀察
-                                                        </h3>
-                                                        {isFeatured && <span className="text-5xl text-black leading-none">★</span>}
-                                                    </div>
-                                                    
-                                                    {photos.length > 0 && (
-                                                        <div className={`mb-5 flex flex-wrap gap-2 ${isFeatured ? 'justify-center' : ''}`}>
-                                                            {photos.map(p => <img key={p.id} src={p.url} className={`grayscale contrast-125 object-cover border-4 border-black ${isFeatured ? 'h-80 w-auto' : 'h-48 w-full'}`}/>)}
+                                                <div key={art.id} className={`article-card bg-transparent border-b-2 border-black pb-6 relative ${isHeadline ? 'md:col-span-full border-b-4 border-black mb-8' : ''}`}>
+                                                    <div className={`flex ${isHeadline ? 'flex-col md:flex-row-reverse gap-8' : 'flex-col gap-4'}`}>
+                                                        
+                                                        {/* 標題 (頭條使用直式排版) */}
+                                                        <div className={`shrink-0 ${isHeadline ? 'border-l-4 border-black pl-6 flex items-start' : 'border-b-2 border-black pb-2'}`}>
+                                                            <h2 className={`font-black font-serif leading-tight ${isHeadline ? 'vertical-text text-4xl max-h-72' : 'text-2xl'} ${isColor ? 'text-blue-900' : 'text-black'}`}>
+                                                                【{art.name}】的觀察紀錄
+                                                            </h2>
+                                                            {isHeadline && <span className={`vertical-text text-2xl font-black mt-4 ${isColor ? 'text-red-600' : 'text-black'}`}>★ 特派記者</span>}
                                                         </div>
-                                                    )}
-                                                    
-                                                    <p className={`text-black font-bold leading-relaxed whitespace-pre-wrap ${isFeatured ? 'text-xl' : 'text-base'}`} style={{ fontFamily: "'Noto Sans TC', sans-serif" }}>
-                                                        {art.content.split('\n\n').slice(1).join('\n\n')}
-                                                    </p>
-                                                    
-                                                    <div className="mt-6 pt-3 border-t-4 border-black flex justify-between items-center font-black text-xs uppercase tracking-wider">
-                                                        <span className="flex items-center"><LucideIcon name="PenTool" size={14} className="mr-1"/> {art.mode === 'beginner' ? '初階版' : '進階版'}</span>
-                                                        <span className="bg-black text-white px-2 py-0.5">#{art.missionCode || 'FREE'}</span>
+                                                        
+                                                        {/* 內文與照片 */}
+                                                        <div className="flex-1">
+                                                            {photos.length > 0 && (
+                                                                <div className={`mb-5 flex gap-3 ${isHeadline ? '' : 'flex-wrap'}`}>
+                                                                    {photos.map(p => <img key={p.id} src={p.url} className={`${!isColor ? 'grayscale contrast-125' : 'contrast-110 saturate-125'} object-cover border-2 border-black ${isHeadline ? 'h-64 w-auto flex-1' : 'h-40 w-full'}`}/>)}
+                                                                </div>
+                                                            )}
+                                                            <p className={`font-bold leading-relaxed text-justify ${isHeadline ? 'text-lg' : 'text-sm'} ${isColor ? 'text-slate-900' : 'text-black'}`} style={{ fontFamily: "'Noto Serif TC', serif" }}>
+                                                                {art.content.split('\n\n').slice(1).join('\n\n')}
+                                                            </p>
+                                                            <div className="mt-4 flex justify-end font-black text-[10px] uppercase tracking-widest font-sans">
+                                                                <span className={`px-2 py-1 text-white ${isColor ? 'bg-red-700' : 'bg-black'}`}>#{art.mode === 'beginner' ? '初階版' : '進階版'}</span>
+                                                            </div>
+                                                        </div>
+
                                                     </div>
                                                 </div>
                                             );
@@ -907,63 +988,67 @@
                 );
             }
 
-            const TeacherCreateView = ({ setView, missionSetup, setMissionSetup, processAI, isProcessingAI, createMission }) => (
-                <div className="max-w-4xl mx-auto p-6">
-                    <button onClick={() => setView('home')} className="mb-6 flex items-center text-slate-500 hover:text-indigo-600 font-bold"><LucideIcon name="ArrowLeft" className="mr-2"/> 返回首頁</button>
-                    <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 mb-8">
-                        <h2 className="text-3xl font-black text-slate-800 mb-6 flex items-center"><LucideIcon name="PenTool" className="mr-3 text-emerald-600" size={32}/> 新增走讀任務</h2>
-                        <div className="grid md:grid-cols-3 gap-4 mb-6">
-                            <div><label className="block text-sm font-bold text-slate-500 mb-2">任務名稱</label><input type="text" value={missionSetup.name} onChange={e=>setMissionSetup({...missionSetup, name: e.target.value})} placeholder="例：林百貨走讀" className="w-full bg-slate-50 p-4 rounded-xl border focus:border-indigo-500 outline-none font-bold" /></div>
-                            <div><label className="block text-sm font-bold text-slate-500 mb-2">任務代碼 (供學生加入)</label><input type="text" value={missionSetup.code} onChange={e=>setMissionSetup({...missionSetup, code: e.target.value})} placeholder="例：0422" className="w-full bg-slate-50 p-4 rounded-xl border focus:border-indigo-500 outline-none font-black text-indigo-600 uppercase" /></div>
-                            <div><label className="block text-sm font-bold text-slate-500 mb-2">日期</label><input type="date" value={missionSetup.date} onChange={e=>setMissionSetup({...missionSetup, date: e.target.value})} className="w-full bg-slate-50 p-4 rounded-xl border focus:border-indigo-500 outline-none font-bold" /></div>
-                        </div>
-                        <div className="mb-6">
-                            <label className="block text-sm font-bold text-slate-500 mb-2">輸入教學計畫 (前置：讓 AI 幫您提取探索項目)</label>
-                            <textarea value={missionSetup.draft} onChange={e=>setMissionSetup({...missionSetup, draft: e.target.value})} className="w-full h-32 bg-slate-50 p-4 rounded-xl border focus:border-indigo-500 outline-none" placeholder="貼上您的教學草稿..."></textarea>
-                            <button onClick={processAI} disabled={isProcessingAI || !missionSetup.draft} className="mt-3 bg-slate-800 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center w-full md:w-auto hover:bg-slate-900 disabled:bg-slate-300 transition-colors">
-                                {isProcessingAI ? <LucideIcon name="RefreshCw" className="animate-spin mr-2"/> : <LucideIcon name="Sparkles" className="mr-2"/>} 透過 AI 提取地點與項目
-                            </button>
-                        </div>
-                        {missionSetup.locations.length > 0 && (
-                            <div className="bg-emerald-50 p-6 rounded-2xl mb-8 border border-emerald-100">
-                                <p className="font-bold text-emerald-800 mb-3">✅ 已確認以下探索清單：</p>
-                                <div className="flex flex-wrap gap-2 mb-4">{missionSetup.locations.map(l => <span key={l} className="bg-white px-3 py-1 rounded-lg text-sm border shadow-sm">📍 {l}</span>)}</div>
-                                <div className="flex flex-wrap gap-2">{missionSetup.targets.map(t => <span key={t} className="bg-white px-3 py-1 rounded-lg text-sm border shadow-sm font-bold text-indigo-600">🔍 {t}</span>)}</div>
-                            </div>
-                        )}
-                        <button onClick={createMission} className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black text-xl hover:bg-indigo-700 shadow-xl shadow-indigo-200 transition-transform active:scale-95">確定開課</button>
-                    </div>
-                </div>
-            );
-
-            const StudentJoinView = ({ setView, roomCodeInput, setRoomCodeInput, joinMission }) => (
-                <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-indigo-600">
-                    <button onClick={() => setView('home')} className="absolute top-6 left-6 text-white/70 hover:text-white font-bold flex items-center transition-colors"><LucideIcon name="ArrowLeft" className="mr-2"/> 返回</button>
-                    <div className="bg-white p-10 rounded-[2rem] shadow-2xl w-full max-w-md text-center">
-                        <div className="bg-indigo-100 text-indigo-600 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6"><LucideIcon name="Key" size={40}/></div>
-                        <h2 className="text-3xl font-black text-slate-800 mb-2">加入任務</h2>
-                        <p className="text-slate-500 mb-8">請輸入老師給您的任務代碼</p>
-                        <input type="text" value={roomCodeInput} onChange={e=>setRoomCodeInput(e.target.value.toUpperCase())} placeholder="任務代碼" className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-5 text-center text-3xl font-black text-indigo-600 mb-6 uppercase tracking-widest focus:border-indigo-500 outline-none transition-colors" />
-                        <button onClick={joinMission} className="w-full bg-slate-800 text-white py-5 rounded-2xl font-black text-xl hover:bg-slate-900 shadow-xl transition-transform active:scale-95">進入教室</button>
-                    </div>
-                </div>
-            );
-
-            const TeacherLoginView = ({ setView, roomCodeInput, setRoomCodeInput, enterDashboard }) => (
-                <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-amber-50">
-                    <button onClick={() => setView('home')} className="absolute top-6 left-6 text-amber-800/60 hover:text-amber-800 font-bold flex items-center transition-colors"><LucideIcon name="ArrowLeft" className="mr-2"/> 返回</button>
-                    <div className="bg-white p-10 rounded-[2rem] shadow-xl w-full max-w-md text-center border border-amber-100">
-                        <div className="bg-amber-100 text-amber-600 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6"><LucideIcon name="Database" size={40}/></div>
-                        <h2 className="text-3xl font-black text-slate-800 mb-2">進入老師後台</h2>
-                        <p className="text-slate-500 mb-8">請輸入您開課時的任務代碼</p>
-                        <input type="text" value={roomCodeInput} onChange={e=>setRoomCodeInput(e.target.value.toUpperCase())} placeholder="任務代碼" className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-5 text-center text-3xl font-black text-amber-600 mb-6 uppercase tracking-widest focus:border-amber-500 outline-none transition-colors" />
-                        <button onClick={enterDashboard} className="w-full bg-amber-500 text-white py-5 rounded-2xl font-black text-xl hover:bg-amber-600 shadow-xl transition-transform active:scale-95">查看學生成果</button>
-                    </div>
-                </div>
-            );
-
+            // 輔助視圖
+            if (view === 'teacher_create') return <TeacherCreateView setView={setView} missionSetup={missionSetup} setMissionSetup={setMissionSetup} processAI={processAI} isProcessingAI={isProcessingAI} createMission={createMission} />;
+            if (view === 'student_join') return <StudentJoinView setView={setView} roomCodeInput={roomCodeInput} setRoomCodeInput={setRoomCodeInput} joinMission={joinMission} />;
+            if (view === 'teacher_login') return <TeacherLoginView setView={setView} roomCodeInput={roomCodeInput} setRoomCodeInput={setRoomCodeInput} enterDashboard={enterDashboard} />;
             return null;
         }
+
+        const TeacherCreateView = ({ setView, missionSetup, setMissionSetup, processAI, isProcessingAI, createMission }) => (
+            <div className="max-w-4xl mx-auto p-6">
+                <button onClick={() => setView('home')} className="mb-6 flex items-center text-slate-500 hover:text-indigo-600 font-bold"><LucideIcon name="ArrowLeft" className="mr-2"/> 返回首頁</button>
+                <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 mb-8">
+                    <h2 className="text-3xl font-black text-slate-800 mb-6 flex items-center"><LucideIcon name="PenTool" className="mr-3 text-emerald-600" size={32}/> 新增走讀任務</h2>
+                    <div className="grid md:grid-cols-3 gap-4 mb-6">
+                        <div><label className="block text-sm font-bold text-slate-500 mb-2">任務名稱</label><input type="text" value={missionSetup.name} onChange={e=>setMissionSetup({...missionSetup, name: e.target.value})} placeholder="例：林百貨走讀" className="w-full bg-slate-50 p-4 rounded-xl border focus:border-indigo-500 outline-none font-bold" /></div>
+                        <div><label className="block text-sm font-bold text-slate-500 mb-2">任務代碼 (供學生加入)</label><input type="text" value={missionSetup.code} onChange={e=>setMissionSetup({...missionSetup, code: e.target.value})} placeholder="例：0422" className="w-full bg-slate-50 p-4 rounded-xl border focus:border-indigo-500 outline-none font-black text-indigo-600 uppercase" /></div>
+                        <div><label className="block text-sm font-bold text-slate-500 mb-2">日期</label><input type="date" value={missionSetup.date} onChange={e=>setMissionSetup({...missionSetup, date: e.target.value})} className="w-full bg-slate-50 p-4 rounded-xl border focus:border-indigo-500 outline-none font-bold" /></div>
+                    </div>
+                    <div className="mb-6">
+                        <label className="block text-sm font-bold text-slate-500 mb-2">輸入教學計畫 (前置：讓 AI 幫您提取探索項目)</label>
+                        <textarea value={missionSetup.draft} onChange={e=>setMissionSetup({...missionSetup, draft: e.target.value})} className="w-full h-32 bg-slate-50 p-4 rounded-xl border focus:border-indigo-500 outline-none" placeholder="貼上您的教學草稿..."></textarea>
+                        <button onClick={processAI} disabled={isProcessingAI || !missionSetup.draft} className="mt-3 bg-slate-800 text-white px-6 py-3 rounded-xl font-bold flex items-center justify-center w-full md:w-auto hover:bg-slate-900 disabled:bg-slate-300 transition-colors">
+                            {isProcessingAI ? <LucideIcon name="RefreshCw" className="animate-spin mr-2"/> : <LucideIcon name="Sparkles" className="mr-2"/>} 透過 AI 提取地點與項目
+                        </button>
+                    </div>
+                    {missionSetup.locations.length > 0 && (
+                        <div className="bg-emerald-50 p-6 rounded-2xl mb-8 border border-emerald-100">
+                            <p className="font-bold text-emerald-800 mb-3">✅ 已確認以下探索清單：</p>
+                            <div className="flex flex-wrap gap-2 mb-4">{missionSetup.locations.map(l => <span key={l} className="bg-white px-3 py-1 rounded-lg text-sm border shadow-sm">📍 {l}</span>)}</div>
+                            <div className="flex flex-wrap gap-2">{missionSetup.targets.map(t => <span key={t} className="bg-white px-3 py-1 rounded-lg text-sm border shadow-sm font-bold text-indigo-600">🔍 {t}</span>)}</div>
+                        </div>
+                    )}
+                    <button onClick={createMission} className="w-full bg-indigo-600 text-white py-4 rounded-2xl font-black text-xl hover:bg-indigo-700 shadow-xl shadow-indigo-200 transition-transform active:scale-95">確定開課</button>
+                </div>
+            </div>
+        );
+
+        const StudentJoinView = ({ setView, roomCodeInput, setRoomCodeInput, joinMission }) => (
+            <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-indigo-600">
+                <button onClick={() => setView('home')} className="absolute top-6 left-6 text-white/70 hover:text-white font-bold flex items-center transition-colors"><LucideIcon name="ArrowLeft" className="mr-2"/> 返回</button>
+                <div className="bg-white p-10 rounded-[2rem] shadow-2xl w-full max-w-md text-center">
+                    <div className="bg-indigo-100 text-indigo-600 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6"><LucideIcon name="Key" size={40}/></div>
+                    <h2 className="text-3xl font-black text-slate-800 mb-2">加入任務</h2>
+                    <p className="text-slate-500 mb-8">請輸入老師給您的任務代碼</p>
+                    <input type="text" value={roomCodeInput} onChange={e=>setRoomCodeInput(e.target.value.toUpperCase())} placeholder="任務代碼" className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-5 text-center text-3xl font-black text-indigo-600 mb-6 uppercase tracking-widest focus:border-indigo-500 outline-none transition-colors" />
+                    <button onClick={joinMission} className="w-full bg-slate-800 text-white py-5 rounded-2xl font-black text-xl hover:bg-slate-900 shadow-xl transition-transform active:scale-95">進入教室</button>
+                </div>
+            </div>
+        );
+
+        const TeacherLoginView = ({ setView, roomCodeInput, setRoomCodeInput, enterDashboard }) => (
+            <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-amber-50">
+                <button onClick={() => setView('home')} className="absolute top-6 left-6 text-amber-800/60 hover:text-amber-800 font-bold flex items-center transition-colors"><LucideIcon name="ArrowLeft" className="mr-2"/> 返回</button>
+                <div className="bg-white p-10 rounded-[2rem] shadow-xl w-full max-w-md text-center border border-amber-100">
+                    <div className="bg-amber-100 text-amber-600 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6"><LucideIcon name="Database" size={40}/></div>
+                    <h2 className="text-3xl font-black text-slate-800 mb-2">進入老師後台</h2>
+                    <p className="text-slate-500 mb-8">請輸入您開課時的任務代碼</p>
+                    <input type="text" value={roomCodeInput} onChange={e=>setRoomCodeInput(e.target.value.toUpperCase())} placeholder="任務代碼" className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-5 text-center text-3xl font-black text-amber-600 mb-6 uppercase tracking-widest focus:border-amber-500 outline-none transition-colors" />
+                    <button onClick={enterDashboard} className="w-full bg-amber-500 text-white py-5 rounded-2xl font-black text-xl hover:bg-amber-600 shadow-xl transition-transform active:scale-95">查看學生成果</button>
+                </div>
+            </div>
+        );
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
