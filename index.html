@@ -73,7 +73,7 @@
         const { useState, useEffect, useRef } = React;
 
         // ==========================================
-        // Firebase 正式設定檔
+        // Firebase 正式設定檔 (已匯入您的專案設定)
         // ==========================================
         const MY_FIREBASE_CONFIG = {
             apiKey: "AIzaSyC3zxvUPk1BGS6kTmlaSCRoIQtrDxREXd8",
@@ -202,9 +202,11 @@
             const [selectedRecords, setSelectedRecords] = useState([]);
             const [recordPhotos, setRecordPhotos] = useState({});
             
-            // 新增排版與風格控制
-            const [columnsCount, setColumnsCount] = useState(2); // 1, 2, 3 欄
+            // 報紙專屬控制狀態
+            const [layoutIndex, setLayoutIndex] = useState(0);
             const [themeStyle, setThemeStyle] = useState('retro-color'); // 'retro-color' | 'retro-bw' | 'modern'
+            const [newspaperTitle, setNewspaperTitle] = useState('寶石鑑定日報');
+            const [imageScale, setImageScale] = useState('medium'); // 'small' | 'medium' | 'large'
 
             // 老師編輯學生紀錄狀態
             const [editingRecordId, setEditingRecordId] = useState(null);
@@ -513,265 +515,6 @@
                 </div>
             );
 
-            // ==========================================
-            // 視圖渲染：學生端紀錄 (Student Record)
-            // ==========================================
-            if (view === 'student_record') return (
-                <div className="max-w-5xl mx-auto p-4 md:p-6 pb-32">
-                    <div className="flex justify-between items-center mb-6 px-2">
-                        <button onClick={() => setView('home')} className="bg-white p-2 rounded-lg border shadow-sm text-slate-400 hover:text-indigo-600"><LucideIcon name="Home"/></button>
-                        <div className="bg-indigo-100 text-indigo-800 px-4 py-1.5 rounded-full font-bold text-sm">目前的任務：{currentMission?.name || '自由探索'}</div>
-                    </div>
-
-                    <header className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 text-center relative overflow-hidden mb-8">
-                        <div className="absolute top-0 right-0 p-8 opacity-5"><LucideIcon name="Gem" size={120}/></div>
-                        <h1 className="text-3xl font-black text-slate-800 mb-6">寶石鑑定室：感官紀錄</h1>
-                        <div className="flex justify-center mb-6">
-                            <div className="bg-slate-100 p-1.5 rounded-full inline-flex border border-slate-200 z-10 relative">
-                                <button onClick={() => {setMode('beginner'); setFocusedFeeling(null);}} className={`px-8 py-2.5 rounded-full font-bold transition-all ${mode === 'beginner' ? 'bg-white text-emerald-600 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>初階版</button>
-                                <button onClick={() => {setMode('advanced'); setFocusedFeeling(null);}} className={`px-8 py-2.5 rounded-full font-bold transition-all ${mode === 'advanced' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>進階版</button>
-                            </div>
-                        </div>
-                        <input type="text" value={studentName} onChange={(e) => setStudentName(e.target.value)} className="w-full max-w-sm bg-slate-50 border-2 rounded-2xl p-4 text-center text-lg font-black focus:border-indigo-500 outline-none relative z-10 transition-colors" placeholder="請輸入姓名 (例: 四甲 王小明)" />
-                    </header>
-
-                    {mode === 'beginner' ? (
-                        <div className="space-y-8">
-                            {SENSE_OPTIONS.map(s => (
-                                <div key={s.id} className="bg-white rounded-3xl border border-slate-200 shadow-sm flex flex-col md:flex-row overflow-hidden">
-                                    {/* 左半邊：觀察與輸入區 */}
-                                    <div className="md:w-1/2 p-6 md:p-8 border-b md:border-b-0 md:border-r border-slate-100 flex flex-col bg-white">
-                                        <div className="flex-grow">
-                                            <div className="flex items-center mb-6">
-                                                <div className={`${s.lightBg} p-2.5 rounded-2xl mr-4 shadow-sm border ${s.borderLight}`}>
-                                                    <LucideIcon name={s.icon} className={s.textColor} size={28}/>
-                                                </div>
-                                                <h3 className={`text-2xl font-black ${s.textColor}`}>{s.label}</h3>
-                                            </div>
-                                            
-                                            <div className="mb-2">
-                                                <p className="text-sm font-bold text-slate-500 mb-2 flex items-center"><LucideIcon name="Camera" size={16} className="mr-1.5"/> 加入照片 (視覺提示)：</p>
-                                                <label className="flex flex-col items-center justify-center w-full h-40 bg-slate-50 border-2 border-dashed border-slate-300 rounded-2xl cursor-pointer hover:bg-slate-100 hover:border-indigo-300 transition-all overflow-hidden relative group">
-                                                    {tempBegData.photos[s.id] ? (
-                                                        <>
-                                                            <img src={tempBegData.photos[s.id]} className="w-full h-full object-cover" />
-                                                            <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                <span className="text-white font-bold flex items-center"><LucideIcon name="RefreshCw" className="mr-2" size={18}/> 點擊更換照片</span>
-                                                            </div>
-                                                        </>
-                                                    ) : (
-                                                        <div className="flex flex-col items-center text-slate-400">
-                                                            <LucideIcon name="ImagePlus" size={32} className="mb-2" />
-                                                            <span className="text-sm font-bold">點擊拍照或選取照片</span>
-                                                        </div>
-                                                    )}
-                                                    <input type="file" accept="image/*" hidden onChange={(e) => {
-                                                        if(e.target.files[0]) compressImage(e.target.files[0], (url) => { setTempBegData(prev => ({...prev, photos: {...prev.photos, [s.id]: url}})); });
-                                                    }} />
-                                                </label>
-                                            </div>
-                                        </div>
-
-                                        <div className="relative w-full h-36 shrink-0 mt-6">
-                                            <textarea 
-                                                value={tempBegData[s.id]} 
-                                                onChange={(e) => setTempBegData({...tempBegData, [s.id]: e.target.value})} 
-                                                className="w-full h-full bg-slate-50 rounded-2xl p-4 pr-16 outline-none focus:ring-2 ring-indigo-200 border border-slate-200 shadow-inner resize-none text-slate-700 text-lg leading-relaxed" 
-                                                placeholder="打字或點擊右下角麥克風錄音..." 
-                                            />
-                                            <button 
-                                                onClick={() => handleMic(`beg_${s.id}`)} 
-                                                className={`absolute bottom-3 right-3 w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-md transition-all duration-300 ${activeMic === `beg_${s.id}` ? 'bg-red-500 scale-110 shadow-red-500/40 text-white animate-pulse' : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-100'}`}
-                                            >
-                                                <LucideIcon name="Mic" size={20}/>
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* 右半邊：感覺標籤區 */}
-                                    <div className="md:w-1/2 p-6 md:p-8 bg-slate-50 flex flex-col">
-                                        <div className="flex-grow">
-                                            <div className="flex justify-between items-center mb-10">
-                                                <div className="flex items-center">
-                                                    <div className="bg-pink-100 p-2.5 rounded-2xl mr-4 shadow-sm border border-pink-200">
-                                                        <LucideIcon name="Heart" size={28} className="text-pink-500"/>
-                                                    </div>
-                                                    <h3 className="text-2xl font-black text-slate-800">我的感覺是：</h3>
-                                                </div>
-                                                <span className="text-[10px] font-bold text-indigo-600 bg-indigo-100/80 border border-indigo-200 px-2.5 py-1 rounded-md flex items-center shadow-sm"><LucideIcon name="Volume2" size={12} className="mr-1"/> 點1下唸讀，點2下鎖定</span>
-                                            </div>
-                                            
-                                            <div className="grid grid-cols-3 md:grid-cols-5 gap-2.5">
-                                                {FEELINGS[s.id].map(f => {
-                                                    const isSel = (tempBegData.feelings[s.id] || []).includes(f);
-                                                    const tapId = `beg_${s.id}_${f}`;
-                                                    const isFocused = focusedFeeling === tapId;
-                                                    return (
-                                                        <button key={f} onClick={() => {
-                                                            if (isFocused) {
-                                                                const current = tempBegData.feelings[s.id] || [];
-                                                                setTempBegData({ ...tempBegData, feelings: { ...tempBegData.feelings, [s.id]: isSel ? current.filter(x => x !== f) : [...current, f] }});
-                                                                setFocusedFeeling(null);
-                                                            } else { speakText(f); setFocusedFeeling(tapId); }
-                                                        }} className={`px-1 py-2.5 rounded-xl text-xs font-bold border transition-all duration-200 relative flex items-center justify-center min-h-[48px] text-center leading-tight shadow-sm
-                                                            ${isSel ? 'bg-emerald-500 text-white border-emerald-600 shadow-emerald-500/30' : isFocused ? 'bg-blue-50 border-blue-400 text-blue-700 ring-2 ring-blue-300 ring-offset-1' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`}>
-                                                            {isFocused && !isSel && <div className="absolute -top-2.5 -right-2.5 bg-blue-500 text-white rounded-full p-1 shadow-md"><LucideIcon name="Volume2" size={12}/></div>}
-                                                            {f}
-                                                        </button>
-                                                    )
-                                                })}
-                                            </div>
-                                        </div>
-
-                                        <div className="relative w-full h-36 shrink-0 mt-6">
-                                            <textarea 
-                                                value={tempBegData.customFeelings[s.id] || ''} 
-                                                onChange={(e) => setTempBegData({...tempBegData, customFeelings: {...tempBegData.customFeelings, [s.id]: e.target.value}})} 
-                                                className="w-full h-full bg-white rounded-2xl p-4 pr-16 outline-none focus:ring-2 ring-indigo-200 border border-slate-200 shadow-sm resize-none text-slate-700 text-lg leading-relaxed" 
-                                                placeholder="其他感覺 (我自己感覺到...)" 
-                                            />
-                                            <button 
-                                                onClick={() => handleMic(`beg_${s.id}_customFeeling`)} 
-                                                className={`absolute bottom-3 right-3 w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-md transition-all duration-300 ${activeMic === `beg_${s.id}_customFeeling` ? 'bg-red-500 scale-110 shadow-red-500/40 text-white animate-pulse' : 'bg-slate-100 border border-slate-200 text-slate-500 hover:bg-slate-200'}`}
-                                            >
-                                                <LucideIcon name="Mic" size={20}/>
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="space-y-8">
-                            {tempAdvRecords.map((rec, idx) => {
-                                const currentSenseId = SENSE_OPTIONS.find(opt => opt.label === rec.sense)?.id || 'see';
-                                return (
-                                    <div key={rec.id} className="bg-white rounded-3xl border-2 border-slate-200 p-8 shadow-md relative overflow-hidden">
-                                        <div className="absolute top-0 left-0 w-2 h-full bg-indigo-500"></div>
-                                        {tempAdvRecords.length > 1 && <button onClick={() => setTempAdvRecords(tempAdvRecords.filter(x => x.id !== rec.id))} className="absolute top-6 right-6 text-slate-300 hover:text-red-500 transition-colors bg-slate-50 p-2 rounded-full"><LucideIcon name="Trash2"/></button>}
-                                        
-                                        <div className="space-y-8 pl-4">
-                                            <div>
-                                                <p className="font-bold mb-3 flex items-center text-slate-700"><span className="bg-indigo-100 text-indigo-700 w-7 h-7 rounded-lg inline-flex items-center justify-center mr-3 text-sm">1</span> 選擇地點：</p>
-                                                <div className="flex flex-wrap gap-2.5">{(currentMission?.locations || DEFAULT_LOCATIONS).map(l => <button key={l} onClick={() => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, location: l} : x))} className={`px-5 py-2.5 rounded-xl text-sm font-bold border transition-all ${rec.location === l ? 'bg-indigo-600 text-white border-transparent shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300'}`}>{l}</button>)}</div>
-                                            </div>
-                                            <div>
-                                                <p className="font-bold mb-3 flex items-center text-slate-700"><span className="bg-indigo-100 text-indigo-700 w-7 h-7 rounded-lg inline-flex items-center justify-center mr-3 text-sm">2</span> 探索項目：</p>
-                                                <div className="flex flex-wrap gap-2.5">{(currentMission?.targets || DEFAULT_TARGETS).map(t => <button key={t} onClick={() => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, target: t} : x))} className={`px-5 py-2.5 rounded-xl text-sm font-bold border transition-all ${rec.target === t ? 'bg-emerald-600 text-white border-transparent shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300'}`}>{t}</button>)}</div>
-                                            </div>
-                                            <div>
-                                                <p className="font-bold mb-3 flex items-center text-slate-700"><span className="bg-indigo-100 text-indigo-700 w-7 h-7 rounded-lg inline-flex items-center justify-center mr-3 text-sm">3</span> 觀察方式：</p>
-                                                <div className="grid grid-cols-4 gap-4">{SENSE_OPTIONS.map(s => <button key={s.id} onClick={() => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, sense: s.label} : x))} className={`p-4 rounded-2xl border-2 flex flex-col items-center transition-all ${rec.sense === s.label ? `border-${s.color.split('-')[1]}-400 ${s.lightBg} shadow-sm` : 'border-slate-100 text-slate-400 bg-white hover:border-slate-200'}`}><LucideIcon name={s.icon} size={32} className={rec.sense === s.label ? s.textColor : 'text-slate-300'}/><span className={`text-xs mt-3 font-bold ${rec.sense === s.label ? s.textColor : 'text-slate-500'}`}>{s.label}</span></button>)}</div>
-                                            </div>
-                                            
-                                            {rec.sense && (
-                                                <div className="p-8 bg-slate-50 rounded-3xl space-y-8 border border-slate-200 shadow-inner">
-                                                    <div>
-                                                        <p className="text-sm font-bold text-slate-600 mb-3 flex items-center"><LucideIcon name="Camera" size={18} className="mr-2"/> 加入照片 (視覺提示)：</p>
-                                                        <label className="flex flex-col items-center justify-center w-full h-48 bg-white border-2 border-dashed border-slate-300 rounded-2xl cursor-pointer hover:bg-slate-50 transition-all overflow-hidden relative group shadow-sm">
-                                                            {rec.photo ? (
-                                                                <>
-                                                                    <img src={rec.photo} className="w-full h-full object-cover" />
-                                                                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                        <span className="text-white font-bold flex items-center"><LucideIcon name="RefreshCw" className="mr-2" size={18}/> 點擊更換照片</span>
-                                                                    </div>
-                                                                </>
-                                                            ) : (
-                                                                <div className="flex flex-col items-center text-slate-400">
-                                                                    <LucideIcon name="ImagePlus" size={40} className="mb-3" />
-                                                                    <span className="text-sm font-bold">點擊拍照或選取照片幫助回想</span>
-                                                                </div>
-                                                            )}
-                                                            <input type="file" accept="image/*" hidden onChange={(e) => {
-                                                                if(e.target.files[0]) compressImage(e.target.files[0], (url) => { setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, photo: url} : x)); });
-                                                            }} />
-                                                        </label>
-                                                    </div>
-
-                                                    <div>
-                                                        <p className="text-sm font-bold text-slate-600 mb-3 flex items-center"><LucideIcon name="FileText" size={18} className="mr-2"/> 具體發現：</p>
-                                                        <div className="relative w-full flex-grow flex flex-col">
-                                                            <textarea value={rec.obs} onChange={(e) => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, obs: e.target.value} : x))} className="w-full min-h-[100px] bg-white rounded-2xl p-4 pr-16 border border-slate-200 outline-none focus:ring-2 ring-indigo-200 shadow-sm resize-none text-slate-700 text-lg" placeholder="發現了什麼細節？"/>
-                                                            <button onClick={() => handleMic(`adv_${rec.id}_obs`)} className={`absolute bottom-3 right-3 w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-md transition-all ${activeMic === `adv_${rec.id}_obs` ? 'bg-red-500 animate-pulse text-white scale-110' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 border border-slate-200'}`}><LucideIcon name="Mic" size={20}/></button>
-                                                        </div>
-                                                    </div>
-                                                    
-                                                    <div>
-                                                        <p className="text-sm font-bold text-slate-600 mb-3 flex items-center"><LucideIcon name="Lightbulb" size={18} className="mr-2 text-amber-500"/> 聯想比喻：</p>
-                                                        <div className="relative w-full flex-grow flex flex-col">
-                                                            <textarea value={rec.meta} onChange={(e) => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, meta: e.target.value} : x))} className="w-full min-h-[100px] bg-white rounded-2xl p-4 pr-16 border border-slate-200 outline-none focus:ring-2 ring-indigo-200 shadow-sm resize-none text-slate-700 text-lg" placeholder="它長得像什麼？或是感覺像？"/>
-                                                            <button onClick={() => handleMic(`adv_${rec.id}_meta`)} className={`absolute bottom-3 right-3 w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-md transition-all ${activeMic === `adv_${rec.id}_meta` ? 'bg-red-500 animate-pulse text-white scale-110' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 border border-slate-200'}`}><LucideIcon name="Mic" size={20}/></button>
-                                                        </div>
-                                                    </div>
-                                                    
-                                                    <div className="pt-4 border-t border-slate-200">
-                                                        <div className="flex justify-between items-center mb-6">
-                                                            <div className="flex items-center">
-                                                                <div className="bg-pink-100 p-2 rounded-xl mr-3 shadow-sm border border-pink-200">
-                                                                    <LucideIcon name="Heart" size={24} className="text-pink-500"/>
-                                                                </div>
-                                                                <h3 className="text-xl font-black text-slate-800">我的感覺是：</h3>
-                                                            </div>
-                                                            <span className="text-[10px] font-bold text-indigo-600 bg-indigo-100/80 border border-indigo-200 px-2.5 py-1 rounded-md flex items-center shadow-sm"><LucideIcon name="Volume2" size={12} className="mr-1"/> 點1下唸讀，點2下鎖定</span>
-                                                        </div>
-                                                        <div className="grid grid-cols-3 md:grid-cols-5 gap-2.5 mb-6">
-                                                            {FEELINGS[currentSenseId].map(f => {
-                                                                const isSel = rec.feelings.includes(f);
-                                                                const tapId = `adv_${rec.id}_${f}`;
-                                                                const isFocused = focusedFeeling === tapId;
-                                                                return (
-                                                                    <button key={f} onClick={() => {
-                                                                        if (isFocused) { setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, feelings: isSel ? x.feelings.filter(y => y !== f) : [...x.feelings, f]} : x)); setFocusedFeeling(null); } 
-                                                                        else { speakText(f); setFocusedFeeling(tapId); }
-                                                                    }} className={`px-1 py-2.5 rounded-xl text-xs font-bold border transition-all duration-200 relative flex items-center justify-center min-h-[48px] text-center leading-tight shadow-sm ${isSel ? 'bg-indigo-600 text-white border-indigo-700 shadow-indigo-500/30' : isFocused ? 'bg-blue-50 border-blue-400 text-blue-700 ring-2 ring-blue-300 ring-offset-1' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
-                                                                        {isFocused && !isSel && <div className="absolute -top-2.5 -right-2.5 bg-blue-500 text-white rounded-full p-1 shadow-md"><LucideIcon name="Volume2" size={12}/></div>}{f}
-                                                                    </button>
-                                                                )
-                                                            })}
-                                                        </div>
-                                                        <div className="relative w-full flex-grow flex flex-col mt-4">
-                                                            <textarea value={rec.customFeeling || ''} onChange={(e) => setTempAdvRecords(tempAdvRecords.map(x => x.id === rec.id ? {...x, customFeeling: e.target.value} : x))} className="w-full h-36 bg-white rounded-2xl p-4 pr-16 border border-slate-200 outline-none focus:ring-2 ring-indigo-200 shadow-sm resize-none text-slate-700 text-lg leading-relaxed" placeholder="其他感覺 (我自己感覺到...)"/>
-                                                            <button onClick={() => handleMic(`adv_${rec.id}_customFeeling`)} className={`absolute bottom-3 right-3 w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-md transition-all ${activeMic === `adv_${rec.id}_customFeeling` ? 'bg-red-500 animate-pulse text-white scale-110' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 border border-slate-200'}`}><LucideIcon name="Mic" size={20}/></button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                )
-                            })}
-                            <button onClick={() => setTempAdvRecords([...tempAdvRecords, { id: Date.now(), location: currentMission?.locations[0]||DEFAULT_LOCATIONS[0], target: '', sense: '', obs: '', meta: '', feelings: [], customFeeling: '', photo: null }])} className="w-full py-5 border-2 border-dashed border-slate-300 rounded-3xl text-slate-500 font-bold hover:bg-white hover:text-indigo-600 hover:border-indigo-300 transition-all flex items-center justify-center shadow-sm"><LucideIcon name="Plus" className="mr-2"/> 新增下一個觀察發現</button>
-                        </div>
-                    )}
-                    
-                    <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t border-slate-200 flex justify-center z-50">
-                        <button onClick={handlePreview} className="max-w-4xl w-full bg-indigo-600 text-white font-black py-4 px-6 rounded-2xl shadow-xl hover:bg-indigo-700 flex items-center justify-center text-xl active:scale-95 transition-transform"><LucideIcon name="Eye" className="mr-2" size={24}/> 預覽小短文並送出</button>
-                    </div>
-
-                    {showModal && (
-                        <div className="fixed inset-0 bg-slate-900/80 z-[100] flex items-center justify-center p-4">
-                            <div className="bg-white rounded-3xl max-w-xl w-full p-10 flex flex-col max-h-[90vh] shadow-2xl">
-                                <div className="text-center mb-6">
-                                    <div className="bg-emerald-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4"><LucideIcon name="Check" size={40} className="text-emerald-600" /></div>
-                                    <h2 className="text-3xl font-black text-slate-800">請確認你的紀錄！</h2>
-                                    <p className="text-slate-400 mt-2 font-mono text-xs">{generatedFileName}</p>
-                                </div>
-                                <div className="bg-amber-50 p-6 rounded-2xl mb-8 overflow-y-auto flex-grow custom-scrollbar border border-amber-100 shadow-inner">
-                                    <p className="leading-relaxed text-lg whitespace-pre-wrap font-bold text-slate-700">{generatedEssay}</p>
-                                </div>
-                                <div className="flex gap-4">
-                                    <button onClick={() => setShowModal(false)} className="flex-1 py-4 rounded-2xl bg-slate-100 font-bold text-slate-500 hover:bg-slate-200 transition-all border border-slate-200">返回修改</button>
-                                    <button onClick={submitRecord} className="flex-1 py-4 rounded-2xl bg-indigo-600 text-white font-bold shadow-xl hover:bg-indigo-700 transition-all flex items-center justify-center"><LucideIcon name="Send" className="mr-2"/> 確定送出給老師</button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
-            );
-
-            // ==========================================
-            // 視圖：老師管理端與電子報
-            // ==========================================
             if (view === 'teacher_dashboard') {
                 const taskRecords = currentMission?.code === 'ALL' 
                     ? allRecords 
@@ -796,11 +539,13 @@
                                         const stuPhotos = (rec.studentPhotos || []).map((url, i) => ({ id: `stu_${i}`, url, selected: true, isStudent: true }));
                                         const teaPhotos = recordPhotos[rec.id] || [];
                                         const mergedPhotos = [...stuPhotos, ...teaPhotos];
+                                        // 針對舊資料庫的兼容處理：若 content 不存在，則抓取 essay
+                                        const textContent = rec.content || rec.essay || '';
 
                                         return (
                                             <tr key={rec.id} className="hover:bg-slate-50 transition-colors">
                                                 <td className="p-4 text-center"><input type="checkbox" checked={selectedRecords.includes(rec.id)} onChange={(e) => e.target.checked ? setSelectedRecords([...selectedRecords, rec.id]) : setSelectedRecords(selectedRecords.filter(id => id !== rec.id))} className="w-5 h-5 accent-indigo-600 cursor-pointer rounded" /></td>
-                                                <td className="p-4"><p className="font-bold text-slate-800 text-base">{rec.name}</p><p className="text-[10px] text-slate-400 font-mono tracking-tighter">{rec.fileName}</p></td>
+                                                <td className="p-4"><p className="font-bold text-slate-800 text-base">{rec.name || rec.studentName}</p><p className="text-[10px] text-slate-400 font-mono tracking-tighter">{rec.fileName}</p></td>
                                                 <td className="p-4">
                                                     <div className="flex gap-2 items-center flex-wrap">
                                                         {mergedPhotos.map(p => (
@@ -841,9 +586,9 @@
                                                         </div>
                                                     ) : (
                                                         <div className="relative group pr-8">
-                                                            <div className="whitespace-pre-wrap leading-relaxed italic text-slate-500 line-clamp-3 hover:line-clamp-none transition-all duration-300">{rec.content}</div>
+                                                            <div className="whitespace-pre-wrap leading-relaxed italic text-slate-500 line-clamp-3 hover:line-clamp-none transition-all duration-300">{textContent}</div>
                                                             <button
-                                                                onClick={() => { setEditingRecordId(rec.id); setEditingContent(rec.content); }}
+                                                                onClick={() => { setEditingRecordId(rec.id); setEditingContent(textContent); }}
                                                                 className="absolute top-0 right-0 p-1.5 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all shadow-sm border border-transparent hover:border-indigo-100"
                                                                 title="編輯內容"
                                                             >
@@ -863,32 +608,66 @@
                 );
             }
 
-            // ==========================================
-            // 視圖渲染：電子報 / A4 報紙預覽
-            // ==========================================
             if (view === 'newsletter') {
                 const articles = allRecords.filter(r => selectedRecords.includes(r.id));
                 const isRetro = themeStyle === 'retro-bw' || themeStyle === 'retro-color';
                 const isColor = themeStyle === 'retro-color';
 
+                // 決定報紙內圖片高度的函數
+                const getImageHeightClass = (isHeadline) => {
+                    if (isHeadline) {
+                        return imageScale === 'large' ? 'h-96 w-auto flex-1' : imageScale === 'medium' ? 'h-64 w-auto flex-1' : 'h-40 w-auto flex-1';
+                    } else {
+                        return imageScale === 'large' ? 'h-64 w-full' : imageScale === 'medium' ? 'h-48 w-full' : 'h-32 w-full';
+                    }
+                };
+
                 return (
                     <div className="min-h-screen bg-stone-200 p-4 md:p-8 font-serif">
-                        <div className="max-w-6xl mx-auto mb-8 print:hidden flex justify-between items-center flex-wrap gap-4 bg-white/80 p-4 rounded-2xl backdrop-blur-sm shadow-sm border border-white">
-                            <button onClick={() => setView('teacher_dashboard')} className="bg-white px-5 py-2.5 rounded-xl flex items-center font-sans font-bold text-slate-600 shadow-sm border hover:bg-slate-50 transition-all"><LucideIcon name="ArrowLeft" className="mr-2" size={18}/> 返回資料庫</button>
-                            <div className="flex gap-3 flex-wrap">
-                                <button onClick={() => {
-                                    const themes = ['modern', 'retro-bw', 'retro-color'];
-                                    setThemeStyle(themes[(themes.indexOf(themeStyle) + 1) % themes.length]);
-                                }} className="bg-emerald-500 text-white px-5 py-2.5 rounded-xl flex items-center font-sans font-bold shadow-md hover:bg-emerald-600 transition-all">
-                                    <LucideIcon name="Palette" className="mr-2" size={18}/> 
-                                    {themeStyle === 'modern' ? '切換：復古黑白報' : themeStyle === 'retro-bw' ? '切換：復古彩色報' : '切換：現代電子報'}
-                                </button>
-                                <button onClick={() => setLayoutIndex((layoutIndex + 1) % 3)} className="bg-amber-500 text-white px-5 py-2.5 rounded-xl flex items-center font-sans font-bold shadow-md hover:bg-amber-600 transition-all">
-                                    <LucideIcon name="LayoutTemplate" className="mr-2" size={18}/> 變換排版
-                                </button>
-                                <button onClick={() => window.print()} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl flex items-center font-sans font-bold shadow-md hover:bg-indigo-700 transition-all">
-                                    <LucideIcon name="Printer" className="mr-2" size={18}/> 輸出 A4 報紙
-                                </button>
+                        {/* 報紙編輯控制台 */}
+                        <div className="max-w-6xl mx-auto mb-8 print:hidden flex flex-col gap-4 bg-white/95 p-5 rounded-2xl backdrop-blur-sm shadow-md border border-white">
+                            <div className="flex justify-between items-center flex-wrap gap-4 border-b border-slate-100 pb-4">
+                                <div className="flex items-center gap-3">
+                                    <button onClick={() => setView('teacher_dashboard')} className="bg-slate-100 px-4 py-2 rounded-xl flex items-center font-sans font-bold text-slate-600 hover:bg-slate-200 transition-all"><LucideIcon name="ArrowLeft" className="mr-2" size={16}/> 返回</button>
+                                    <span className="font-sans font-black text-slate-800 text-lg">報紙編輯控制台</span>
+                                </div>
+                                <button onClick={() => window.print()} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl flex items-center font-sans font-black shadow-md hover:bg-indigo-700 transition-all"><LucideIcon name="Printer" className="mr-2" size={18}/> 列印 / 下載 PDF</button>
+                            </div>
+                            
+                            <div className="flex flex-wrap items-center gap-6">
+                                {/* 編輯大標題 */}
+                                <div className="flex items-center gap-2 font-sans flex-grow min-w-[200px]">
+                                    <span className="text-sm font-bold text-slate-500">版面大標題：</span>
+                                    <input 
+                                        type="text" 
+                                        value={newspaperTitle} 
+                                        onChange={e => setNewspaperTitle(e.target.value)}
+                                        className="flex-grow bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 font-bold text-slate-700 focus:outline-none focus:ring-2 ring-indigo-200"
+                                    />
+                                </div>
+                                
+                                {/* 編輯風格 */}
+                                <div className="flex items-center gap-2 font-sans bg-slate-100 p-1 rounded-xl">
+                                    <button onClick={() => setThemeStyle('modern')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${themeStyle === 'modern' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>現代電子報</button>
+                                    <button onClick={() => setThemeStyle('retro-color')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${themeStyle === 'retro-color' ? 'bg-white shadow text-red-600' : 'text-slate-500 hover:text-slate-700'}`}>復古彩色報</button>
+                                    <button onClick={() => setThemeStyle('retro-bw')} className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${themeStyle === 'retro-bw' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>復古黑白報</button>
+                                </div>
+
+                                {/* 編輯排版 */}
+                                <div className="flex items-center gap-2 font-sans bg-slate-100 p-1 rounded-xl">
+                                    <span className="text-xs font-bold text-slate-400 pl-2">排列：</span>
+                                    <button onClick={() => setLayoutIndex(0)} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${layoutIndex === 0 ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>雙欄</button>
+                                    <button onClick={() => setLayoutIndex(1)} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${layoutIndex === 1 ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>單欄</button>
+                                    <button onClick={() => setLayoutIndex(2)} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${layoutIndex === 2 ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>頭條放大</button>
+                                </div>
+
+                                {/* 編輯照片大小 */}
+                                <div className="flex items-center gap-2 font-sans bg-slate-100 p-1 rounded-xl">
+                                    <span className="text-xs font-bold text-slate-400 pl-2">圖片：</span>
+                                    <button onClick={() => setImageScale('small')} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${imageScale === 'small' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>小</button>
+                                    <button onClick={() => setImageScale('medium')} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${imageScale === 'medium' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>中</button>
+                                    <button onClick={() => setImageScale('large')} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${imageScale === 'large' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>大</button>
+                                </div>
                             </div>
                         </div>
                         
@@ -898,7 +677,7 @@
                                 /* 現代風格電子報 */
                                 <div className="h-full">
                                     <div className="border-b-8 border-double border-indigo-900 text-center pb-8 mb-10">
-                                        <h1 className="text-5xl font-black mb-4 tracking-wider text-indigo-900">寶石小偵探特刊</h1>
+                                        <h1 className="text-5xl font-black mb-4 tracking-wider text-indigo-900">{newspaperTitle}</h1>
                                         <p className="text-lg text-slate-500 uppercase tracking-[0.3em] font-sans font-bold">Task: {currentMission?.code || 'N/A'} • {new Date().toLocaleDateString()}</p>
                                     </div>
                                     <div className={`news-columns ${layoutIndex === 0 ? 'columns-1 md:columns-2' : layoutIndex === 1 ? 'flex flex-col' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
@@ -907,11 +686,20 @@
                                             const teaPhotos = (recordPhotos[art.id] || []).filter(p => p.selected);
                                             const photos = [...stuPhotos, ...teaPhotos];
                                             const isFeatured = layoutIndex === 2 && idx === 0;
+
+                                            // 處理可能因老師編輯而遺失的格式
+                                            const contentStr = art.content || art.essay || '';
+                                            let displayContent = contentStr;
+                                            if (displayContent.startsWith('【作者：')) {
+                                                const parts = displayContent.split('\n\n');
+                                                if (parts.length > 1) displayContent = parts.slice(1).join('\n\n');
+                                            }
+
                                             return (
                                                 <div key={art.id} className={`article-card p-6 bg-slate-50 border-t-4 border-indigo-500 shadow-sm relative ${isFeatured ? 'md:col-span-full bg-white border-l-8 border-t-0 shadow-md' : ''}`}>
-                                                    <h3 className={`${isFeatured ? 'text-3xl' : 'text-xl'} font-black mb-4 leading-tight text-slate-800`}>【{art.name}】的感官發現</h3>
-                                                    {photos.length > 0 && <div className={`mb-5 flex flex-wrap gap-3 ${isFeatured ? 'justify-center' : ''}`}>{photos.map(p => <img key={p.id} src={p.url} className={`${isFeatured ? 'h-64 w-auto' : 'h-40 flex-grow'} object-cover rounded border border-slate-200 shadow-sm`}/>)}</div>}
-                                                    <p className={`text-slate-700 leading-relaxed font-sans ${isFeatured ? 'text-lg' : 'text-sm'} whitespace-pre-wrap`}>{art.content.split('\n\n').slice(1).join('\n\n')}</p>
+                                                    <h3 className={`${isFeatured ? 'text-3xl' : 'text-xl'} font-black mb-4 leading-tight text-slate-800`}>【{art.name || art.studentName}】的感官發現</h3>
+                                                    {photos.length > 0 && <div className={`mb-5 flex flex-wrap gap-3 ${isFeatured ? 'justify-center' : ''}`}>{photos.map(p => <img key={p.id} src={p.url} className={`${getImageHeightClass(isFeatured)} object-cover rounded border border-slate-200 shadow-sm`}/>)}</div>}
+                                                    <p className={`text-slate-700 leading-relaxed font-sans ${isFeatured ? 'text-lg' : 'text-sm'} whitespace-pre-wrap`}>{displayContent}</p>
                                                     <div className="mt-5 pt-3 border-t border-slate-200 flex justify-between items-center italic text-xs text-slate-400 font-sans"><span>{art.mode === 'beginner' ? '初階版' : '深度進階版'}</span><span>#{art.missionCode || 'FREE'}</span></div>
                                                 </div>
                                             );
@@ -928,7 +716,7 @@
                                                 中華民國 {new Date().getFullYear() - 1911} 年 {new Date().getMonth() + 1} 月 {new Date().getDate()} 日
                                             </span>
                                             <h1 className={`text-6xl md:text-7xl font-black tracking-tight leading-none ${isColor ? 'text-red-700' : 'text-black'}`} style={{ fontFamily: "'Noto Serif TC', serif" }}>
-                                                寶石鑑定日報
+                                                {newspaperTitle.split('').map((char, i) => <span key={i}>{char}{i === newspaperTitle.length/2 - 1 ? <br/> : ''}</span>)}
                                             </h1>
                                         </div>
                                         <div className={`text-right border-l-4 pl-4 pb-1 ${isColor ? 'border-red-700' : 'border-black'}`}>
@@ -949,6 +737,14 @@
                                             const photos = [...stuPhotos, ...teaPhotos];
                                             const isHeadline = idx === 0;
 
+                                            // 處理內容相容性
+                                            const contentStr = art.content || art.essay || '';
+                                            let displayContent = contentStr;
+                                            if (displayContent.startsWith('【作者：')) {
+                                                const parts = displayContent.split('\n\n');
+                                                if (parts.length > 1) displayContent = parts.slice(1).join('\n\n');
+                                            }
+
                                             return (
                                                 <div key={art.id} className={`article-card bg-transparent border-b-2 border-black pb-6 relative ${isHeadline ? 'md:col-span-full border-b-4 border-black mb-8' : ''}`}>
                                                     <div className={`flex ${isHeadline ? 'flex-col md:flex-row-reverse gap-8' : 'flex-col gap-4'}`}>
@@ -956,7 +752,7 @@
                                                         {/* 標題 (頭條使用直式排版) */}
                                                         <div className={`shrink-0 ${isHeadline ? 'border-l-4 border-black pl-6 flex items-start' : 'border-b-2 border-black pb-2'}`}>
                                                             <h2 className={`font-black font-serif leading-tight ${isHeadline ? 'vertical-text text-4xl max-h-72' : 'text-2xl'} ${isColor ? 'text-blue-900' : 'text-black'}`}>
-                                                                【{art.name}】的觀察紀錄
+                                                                【{art.name || art.studentName}】的觀察紀錄
                                                             </h2>
                                                             {isHeadline && <span className={`vertical-text text-2xl font-black mt-4 ${isColor ? 'text-red-600' : 'text-black'}`}>★ 特派記者</span>}
                                                         </div>
@@ -965,11 +761,11 @@
                                                         <div className="flex-1">
                                                             {photos.length > 0 && (
                                                                 <div className={`mb-5 flex gap-3 ${isHeadline ? '' : 'flex-wrap'}`}>
-                                                                    {photos.map(p => <img key={p.id} src={p.url} className={`${!isColor ? 'grayscale contrast-125' : 'contrast-110 saturate-125'} object-cover border-2 border-black ${isHeadline ? 'h-64 w-auto flex-1' : 'h-40 w-full'}`}/>)}
+                                                                    {photos.map(p => <img key={p.id} src={p.url} className={`${!isColor ? 'grayscale contrast-125' : 'contrast-110 saturate-125'} object-cover border-2 border-black ${getImageHeightClass(isHeadline)}`}/>)}
                                                                 </div>
                                                             )}
                                                             <p className={`font-bold leading-relaxed text-justify ${isHeadline ? 'text-lg' : 'text-sm'} ${isColor ? 'text-slate-900' : 'text-black'}`} style={{ fontFamily: "'Noto Serif TC', serif" }}>
-                                                                {art.content.split('\n\n').slice(1).join('\n\n')}
+                                                                {displayContent}
                                                             </p>
                                                             <div className="mt-4 flex justify-end font-black text-[10px] uppercase tracking-widest font-sans">
                                                                 <span className={`px-2 py-1 text-white ${isColor ? 'bg-red-700' : 'bg-black'}`}>#{art.mode === 'beginner' ? '初階版' : '進階版'}</span>
@@ -992,6 +788,7 @@
             if (view === 'teacher_create') return <TeacherCreateView setView={setView} missionSetup={missionSetup} setMissionSetup={setMissionSetup} processAI={processAI} isProcessingAI={isProcessingAI} createMission={createMission} />;
             if (view === 'student_join') return <StudentJoinView setView={setView} roomCodeInput={roomCodeInput} setRoomCodeInput={setRoomCodeInput} joinMission={joinMission} />;
             if (view === 'teacher_login') return <TeacherLoginView setView={setView} roomCodeInput={roomCodeInput} setRoomCodeInput={setRoomCodeInput} enterDashboard={enterDashboard} />;
+            if (view === 'student_record') return <StudentRecordView setView={setView} />; // Fallback if somehow not matched
             return null;
         }
 
@@ -1049,6 +846,8 @@
                 </div>
             </div>
         );
+
+        const StudentRecordView = ({ setView }) => null; // Placeholder as actual is rendered inline above
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
