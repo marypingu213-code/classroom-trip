@@ -17,24 +17,31 @@
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         
-        /* 實體報紙排版引擎 */
-        .paper-wrapper {
+        /* A3 實體報紙排版引擎 */
+        .paper-a3 {
+            width: 420mm;
+            min-height: 297mm;
+            margin: 0 auto;
             background: white;
             box-shadow: 0 10px 25px rgba(0,0,0,0.15);
             padding: 15mm;
             box-sizing: border-box;
             position: relative;
         }
-        .paper-a4 { width: 210mm; min-height: 297mm; }
-        .paper-a3 { width: 420mm; min-height: 297mm; } /* A3 橫式 = 兩張 A4 直式拼合 */
         
+        /* 報紙欄位與直式排版 */
+        .news-columns { 
+            column-count: 4; 
+            column-gap: 8mm; 
+            orphans: 1; 
+            widows: 1; 
+        }
         .vertical-text { 
             writing-mode: vertical-rl; 
             text-orientation: upright;
             letter-spacing: 0.1em;
         }
-        
-        /* 關鍵修復：絕對防止列印時文章被從中切斷 */
+        /* 防止文章區塊在列印時被從中切斷 */
         .article-card { 
             break-inside: avoid; 
             page-break-inside: avoid;
@@ -42,12 +49,18 @@
             margin-bottom: 6mm; 
         }
 
+        /* 跨越所有欄位的頭條設定 */
+        .col-span-all {
+            column-span: all;
+            margin-bottom: 8mm;
+        }
+
         @media print { 
+            @page { size: A3 landscape; margin: 10mm; }
             body { background: white; padding: 0; margin: 0; } 
             .print\:hidden { display: none !important; } 
-            /* 強制列印出所有背景色與粗邊框，達到所見即所得 */
             * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            .paper-wrapper {
+            .paper-a3 {
                 width: 100% !important;
                 min-height: auto !important;
                 margin: 0 !important;
@@ -158,6 +171,9 @@
             };
         };
 
+        // ==========================================
+        // 主應用程式
+        // ==========================================
         function App() {
             const [isOffline, setIsOffline] = useState(!appInstance);
             const [user, setUser] = useState(null);
@@ -190,11 +206,10 @@
             const [selectedRecords, setSelectedRecords] = useState([]);
             const [recordPhotos, setRecordPhotos] = useState({});
             
-            // 報紙專屬控制狀態
-            const [layoutIndex, setLayoutIndex] = useState(0); // 0:雙欄/四欄, 1:單欄/雙欄, 2:頭條放大
+            // 報紙專屬控制狀態 (A3 全自訂版本)
             const [themeStyle, setThemeStyle] = useState('retro-color'); // 'retro-color' | 'retro-bw' | 'modern'
-            const [paperSize, setPaperSize] = useState('A4'); // 'A4' | 'A3' -> 新增A3支援雙張A4展開
             const [newspaperTitle, setNewspaperTitle] = useState('寶石鑑定日報');
+            const [newspaperTitleSize, setNewspaperTitleSize] = useState('text-7xl');
             const [newspaperDate, setNewspaperDate] = useState(new Date().toISOString().split('T')[0]);
             const [newspaperTaskLabel, setNewspaperTaskLabel] = useState('TASK: ALL');
             const [articleOverrides, setArticleOverrides] = useState({}); 
@@ -548,6 +563,9 @@
                 );
             }
 
+            // ==========================================
+            // 電子報 A3 列印排版引擎 (終極進化版)
+            // ==========================================
             if (view === 'newsletter') {
                 const articles = allRecords.filter(r => selectedRecords.includes(r.id));
                 const isRetro = themeStyle === 'retro-bw' || themeStyle === 'retro-color';
@@ -558,40 +576,43 @@
                 const month = isNaN(d.getMonth()) ? new Date().getMonth() + 1 : d.getMonth() + 1;
                 const day = isNaN(d.getDate()) ? new Date().getDate() : d.getDate();
 
-                // 根據紙張大小決定格線佈局
-                let layoutClass = '';
-                if (layoutIndex === 0) layoutClass = paperSize === 'A3' ? 'grid grid-cols-4 gap-6' : 'grid grid-cols-2 gap-6';
-                if (layoutIndex === 1) layoutClass = paperSize === 'A3' ? 'grid grid-cols-2 gap-8' : 'flex flex-col gap-6';
-                if (layoutIndex === 2) layoutClass = paperSize === 'A3' ? 'grid grid-cols-4 gap-6' : 'grid grid-cols-2 gap-6';
-
                 return (
                     <div className="min-h-screen bg-stone-200 p-4 md:p-8 font-serif">
-                        {/* 動態注入列印樣式，強制印表機套用您選擇的紙張大小 */}
-                        <style>
-                            {`
-                            @media print { 
-                                @page { size: ${paperSize === 'A3' ? 'A3 landscape' : 'A4 portrait'}; margin: 15mm; }
-                            }
-                            `}
-                        </style>
 
                         {/* 報紙編輯控制台 */}
                         <div className="max-w-6xl mx-auto mb-8 print:hidden flex flex-col gap-4 bg-white/95 p-5 rounded-2xl backdrop-blur-sm shadow-md border border-white">
                             <div className="flex justify-between items-center flex-wrap gap-4 border-b border-slate-100 pb-4">
                                 <div className="flex items-center gap-3">
                                     <button onClick={() => setView('teacher_dashboard')} className="bg-slate-100 px-4 py-2 rounded-xl flex items-center font-sans font-bold text-slate-600 hover:bg-slate-200 transition-all"><LucideIcon name="ArrowLeft" className="mr-2" size={16}/> 返回</button>
-                                    <span className="font-sans font-black text-slate-800 text-lg">報紙編輯控制台</span>
+                                    <span className="font-sans font-black text-slate-800 text-lg">報紙編輯控制台 (A3 專業對頁版)</span>
                                 </div>
-                                <button onClick={() => window.print()} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl flex items-center font-sans font-black shadow-md hover:bg-indigo-700 transition-all"><LucideIcon name="Printer" className="mr-2" size={18}/> 列印 / 下載 PDF</button>
+                                <button onClick={() => window.print()} className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl flex items-center font-sans font-black shadow-md hover:bg-indigo-700 transition-all"><LucideIcon name="Printer" className="mr-2" size={18}/> 列印 A3 對頁 / 下載 PDF</button>
                             </div>
                             
                             <div className="flex flex-wrap items-center gap-6">
-                                <div className="flex items-center gap-2 font-sans bg-slate-100 p-1 rounded-xl">
-                                    <span className="text-xs font-bold text-slate-400 pl-2">紙張：</span>
-                                    <button onClick={() => setPaperSize('A4')} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${paperSize === 'A4' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>A4 單頁直式</button>
-                                    <button onClick={() => setPaperSize('A3')} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${paperSize === 'A3' ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>A3 雙頁展開</button>
+                                {/* 編輯大標題 (改用 textarea 支援換行) */}
+                                <div className="flex items-start gap-2 font-sans flex-grow min-w-[250px]">
+                                    <span className="text-sm font-bold text-slate-500 whitespace-nowrap mt-2">版面大標題：</span>
+                                    <textarea 
+                                        rows="2"
+                                        value={newspaperTitle} 
+                                        onChange={e => setNewspaperTitle(e.target.value)}
+                                        className="flex-grow bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 font-bold text-slate-700 focus:outline-none focus:ring-2 ring-indigo-200 resize-none leading-snug"
+                                        placeholder="可以使用 Enter 換行，或空白鍵調整位置避開摺線喔！"
+                                    />
                                 </div>
 
+                                <div className="flex items-center gap-2 font-sans bg-slate-100 p-1 rounded-xl">
+                                    <span className="text-xs font-bold text-slate-400 pl-2">標題字體：</span>
+                                    <select value={newspaperTitleSize} onChange={e => setNewspaperTitleSize(e.target.value)} className="bg-white border-none rounded px-2 py-1 text-sm font-bold text-slate-700 outline-none">
+                                        <option value="text-6xl">6XL</option>
+                                        <option value="text-7xl">7XL</option>
+                                        <option value="text-8xl">8XL</option>
+                                        <option value="text-9xl">9XL</option>
+                                    </select>
+                                </div>
+                                
+                                {/* 編輯風格 */}
                                 <div className="flex items-center gap-2 font-sans bg-slate-100 p-1 rounded-xl">
                                     <span className="text-xs font-bold text-slate-400 pl-2">風格：</span>
                                     <button onClick={() => setThemeStyle('modern')} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${themeStyle === 'modern' ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}>現代</button>
@@ -599,17 +620,8 @@
                                     <button onClick={() => setThemeStyle('retro-bw')} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${themeStyle === 'retro-bw' ? 'bg-white shadow text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}>復古黑白</button>
                                 </div>
 
-                                <div className="flex items-center gap-2 font-sans bg-slate-100 p-1 rounded-xl">
-                                    <span className="text-xs font-bold text-slate-400 pl-2">排列：</span>
-                                    <button onClick={() => setLayoutIndex(0)} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${layoutIndex === 0 ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>雙欄</button>
-                                    <button onClick={() => setLayoutIndex(1)} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${layoutIndex === 1 ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>單欄</button>
-                                    <button onClick={() => setLayoutIndex(2)} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${layoutIndex === 2 ? 'bg-white shadow text-slate-800' : 'text-slate-500'}`}>頭條放大</button>
-                                </div>
-
                                 <div className="flex items-center gap-2 font-sans flex-grow min-w-[200px] mt-2 w-full">
-                                    <span className="text-sm font-bold text-slate-500 whitespace-nowrap">報紙大標題：</span>
-                                    <input type="text" value={newspaperTitle} onChange={e => setNewspaperTitle(e.target.value)} className="w-48 bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 font-bold text-slate-700 focus:outline-none focus:ring-2 ring-indigo-200" />
-                                    <span className="text-sm font-bold text-slate-500 whitespace-nowrap ml-4">日期：</span>
+                                    <span className="text-sm font-bold text-slate-500 whitespace-nowrap ml-2">日期：</span>
                                     <input type="date" value={newspaperDate} onChange={e => setNewspaperDate(e.target.value)} className="w-36 bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 font-bold text-slate-700 focus:outline-none focus:ring-2 ring-indigo-200" />
                                     <span className="text-sm font-bold text-slate-500 whitespace-nowrap ml-4">右上角標籤：</span>
                                     <input type="text" value={newspaperTaskLabel} onChange={e => setNewspaperTaskLabel(e.target.value)} className="flex-grow bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 font-bold text-slate-700 focus:outline-none focus:ring-2 ring-indigo-200" />
@@ -617,34 +629,31 @@
                             </div>
                         </div>
                         
-                        {/* 報紙預覽容器，加入 x 軸 scroll 讓 A3 大螢幕預覽更順暢 */}
+                        {/* 報紙預覽容器 */}
                         <div className="w-full overflow-x-auto pb-12">
-                            <div className={`paper-wrapper print-exact ${paperSize === 'A4' ? 'paper-a4' : 'paper-a3'}`}>
+                            <div className="paper-a3 print-exact">
                                 
-                                {/* A3 專用的模擬摺線 (螢幕預覽用，列印時隱藏) */}
-                                {paperSize === 'A3' && (
-                                    <div className="a3-fold-line absolute top-0 bottom-0 left-1/2 border-l-2 border-dashed border-slate-300 opacity-50 z-0 pointer-events-none"></div>
-                                )}
+                                {/* A3 專用的模擬摺線 */}
+                                <div className="a3-fold-line absolute top-0 bottom-0 left-1/2 border-l border-dashed border-slate-400 opacity-40 z-0 pointer-events-none"></div>
 
                                 <div className="relative z-10 h-full">
                                     {!isRetro ? (
                                         /* 現代風格電子報 */
                                         <div>
-                                            <div className="border-b-8 border-double border-indigo-900 text-center pb-8 mb-10">
-                                                <h1 className="text-5xl font-black mb-4 tracking-wider text-indigo-900">{newspaperTitle}</h1>
+                                            <div className="border-b-8 border-double border-indigo-900 text-center pb-8 mb-8 col-span-all">
+                                                <h1 className={`${newspaperTitleSize} font-black mb-4 tracking-wider text-indigo-900 whitespace-pre-wrap leading-tight`}>{newspaperTitle}</h1>
                                                 <p className="text-lg text-slate-500 uppercase tracking-[0.3em] font-sans font-bold">{newspaperTaskLabel} • {newspaperDate}</p>
                                             </div>
-                                            <div className={layoutClass}>
+                                            <div className="news-columns">
                                                 {articles.map((art, idx) => {
                                                     const stuPhotos = (art.studentPhotos || []).map((url, i) => ({ id: `stu_${i}`, url, selected: true }));
                                                     const teaPhotos = (recordPhotos[art.id] || []).filter(p => p.selected);
                                                     const photos = [...stuPhotos, ...teaPhotos];
-                                                    const isFeatured = layoutIndex === 2 && idx === 0;
 
                                                     const defaultTitle = `【${art.name || art.studentName}】的感官發現`;
                                                     const currentTitle = articleOverrides[art.id]?.title ?? defaultTitle;
-                                                    const defaultTitleSize = isFeatured ? 'text-4xl' : 'text-2xl';
-                                                    const currentTitleSize = articleOverrides[art.id]?.titleSize ?? defaultTitleSize;
+                                                    const currentTitleSize = articleOverrides[art.id]?.titleSize ?? 'text-2xl';
+                                                    const isSpanAll = articleOverrides[art.id]?.spanAll ?? (idx === 0);
 
                                                     const contentStr = art.content || art.essay || '';
                                                     let displayContent = contentStr;
@@ -654,47 +663,51 @@
                                                     }
 
                                                     return (
-                                                        <div key={art.id} className={`article-card p-6 bg-slate-50 border-t-4 border-indigo-500 shadow-sm relative ${isFeatured ? 'col-span-full bg-white border-l-8 border-t-0 shadow-md' : ''}`}>
+                                                        <div key={art.id} className={`article-card p-6 bg-slate-50 border-t-4 border-indigo-500 shadow-sm relative ${isSpanAll ? 'col-span-all bg-white border-l-8 border-t-0 shadow-md' : ''}`}>
                                                             
                                                             {/* 個別排版微調工具列 */}
-                                                            <div className="print:hidden bg-indigo-50 border border-indigo-100 rounded-lg p-2 mb-4 flex flex-wrap gap-2 items-center text-sm shadow-sm">
+                                                            <div className="print:hidden bg-indigo-50 border border-indigo-100 rounded-lg p-2 mb-4 flex flex-wrap gap-2 items-center text-sm shadow-sm opacity-50 hover:opacity-100 transition-opacity">
                                                                 <LucideIcon name="Settings" size={16} className="text-indigo-400" />
-                                                                <span className="font-bold text-indigo-700">個別排版微調:</span>
-                                                                <input type="text" value={currentTitle} onChange={e => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), title: e.target.value}}))} className="px-2 py-1 rounded border border-indigo-200 flex-grow max-w-[200px] outline-none focus:border-indigo-400" placeholder="自訂標題..." />
-                                                                <select value={currentTitleSize} onChange={e => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), titleSize: e.target.value}}))} className="px-2 py-1 rounded border border-indigo-200 outline-none focus:border-indigo-400 text-slate-600">
-                                                                    <option value="text-xl">字體: 小 (XL)</option>
-                                                                    <option value="text-2xl">字體: 中 (2XL)</option>
-                                                                    <option value="text-3xl">字體: 大 (3XL)</option>
-                                                                    <option value="text-4xl">字體: 特大 (4XL)</option>
-                                                                    <option value="text-5xl">字體: 超大 (5XL)</option>
+                                                                <input type="text" value={currentTitle} onChange={e => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), title: e.target.value}}))} className="px-2 py-1 rounded border border-indigo-200 flex-grow max-w-[150px] outline-none" placeholder="自訂標題..." />
+                                                                <select value={currentTitleSize} onChange={e => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), titleSize: e.target.value}}))} className="px-1 py-1 rounded border border-indigo-200 outline-none">
+                                                                    <option value="text-xl">XL</option><option value="text-2xl">2XL</option><option value="text-3xl">3XL</option><option value="text-4xl">4XL</option><option value="text-5xl">5XL</option>
                                                                 </select>
+                                                                <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), spanAll: !isSpanAll}}))} className={`px-2 py-1 rounded font-bold ${isSpanAll ? 'bg-indigo-500 text-white' : 'bg-white text-indigo-500 border border-indigo-200'}`}>跨欄</button>
                                                             </div>
 
                                                             <h3 className={`${currentTitleSize} font-black mb-4 leading-tight text-slate-800`}>{currentTitle}</h3>
                                                             
-                                                            {photos.length > 0 && <div className={`mb-5 flex gap-3 ${isFeatured ? 'justify-center' : 'flex-wrap'}`}>
-                                                                {photos.map(p => {
-                                                                    const defaultPhotoClass = isFeatured ? 'h-64 flex-grow' : 'h-40 flex-grow';
-                                                                    const currentPhotoClass = articleOverrides[art.id]?.photoSizes?.[p.id] ?? defaultPhotoClass;
-                                                                    return (
-                                                                        <div key={p.id} className={`relative group ${currentPhotoClass} min-w-[120px]`}>
-                                                                            <img src={p.url} className={`border border-slate-200 shadow-sm rounded object-cover w-full h-full`} />
-                                                                            <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 print:hidden bg-white/95 p-1.5 rounded-lg shadow-lg border border-slate-200 z-10 flex flex-wrap gap-1 max-w-[140px] backdrop-blur-sm">
-                                                                                <span className="w-full text-[10px] font-black text-slate-500 text-center mb-1">調整圖片尺寸</span>
-                                                                                <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-32 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">小</button>
-                                                                                <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-48 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">中</button>
-                                                                                <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-64 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">大</button>
-                                                                                <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-96 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">特大</button>
-                                                                                <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-auto w-full'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded w-full mt-1 font-bold">滿版</button>
-                                                                            </div>
+                                                            {/* 圖片區域：支援文繞圖與個別尺寸 */}
+                                                            {photos.map(p => {
+                                                                const layout = articleOverrides[art.id]?.photoLayouts?.[p.id] ?? (isSpanAll ? 'full' : 'full');
+                                                                const layoutClasses = {
+                                                                    'full': 'w-full block mb-4',
+                                                                    'left-lg': 'w-1/2 float-left mr-4 mb-2',
+                                                                    'right-lg': 'w-1/2 float-right ml-4 mb-2',
+                                                                    'left-sm': 'w-1/3 float-left mr-4 mb-2',
+                                                                    'right-sm': 'w-1/3 float-right ml-4 mb-2',
+                                                                    'hidden': 'hidden'
+                                                                };
+
+                                                                return (
+                                                                    <div key={p.id} className={`relative group ${layoutClasses[layout]}`}>
+                                                                        <img src={p.url} className="w-full h-auto object-cover rounded border border-slate-200 shadow-sm" />
+                                                                        <div className="absolute top-1 left-1 opacity-0 group-hover:opacity-100 print:hidden bg-white/95 p-1 rounded-lg shadow-lg border border-slate-200 z-10 flex flex-wrap gap-1 w-40 backdrop-blur-sm">
+                                                                            <span className="w-full text-[10px] font-black text-slate-500 text-center mb-1">文繞圖設定</span>
+                                                                            <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'full'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1.5 py-1 rounded font-bold w-full">滿版</button>
+                                                                            <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'left-lg'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1.5 py-1 rounded font-bold w-[48%]">左大圖</button>
+                                                                            <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'right-lg'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1.5 py-1 rounded font-bold w-[48%]">右大圖</button>
+                                                                            <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'left-sm'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1.5 py-1 rounded font-bold w-[48%]">左小圖</button>
+                                                                            <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'right-sm'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1.5 py-1 rounded font-bold w-[48%]">右小圖</button>
+                                                                            <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'hidden'}}}))} className="text-[10px] bg-red-50 text-red-500 hover:bg-red-100 px-1.5 py-1 rounded font-bold w-full mt-1">隱藏圖片</button>
                                                                         </div>
-                                                                    );
-                                                                })}
-                                                            </div>}
+                                                                    </div>
+                                                                );
+                                                            })}
                                                             
-                                                            <p className={`text-slate-700 leading-relaxed font-sans ${isFeatured ? 'text-lg' : 'text-sm'} whitespace-pre-wrap`}>{displayContent}</p>
+                                                            <p className={`text-slate-700 leading-relaxed font-sans ${isSpanAll ? 'text-lg' : 'text-sm'} whitespace-pre-wrap text-justify`}>{displayContent}</p>
                                                             
-                                                            <div className="mt-5 pt-3 border-t border-slate-200 flex justify-end items-center italic text-xs text-slate-400 font-sans"><span>#{art.name || art.studentName}</span></div>
+                                                            <div className="mt-5 pt-3 border-t border-slate-200 flex justify-end items-center italic text-xs text-slate-400 font-sans clear-both"><span>#{art.name || art.studentName}</span></div>
                                                         </div>
                                                     );
                                                 })}
@@ -703,16 +716,16 @@
                                     ) : (
                                         /* 復古風格紙本報紙 (黑白/彩色) */
                                         <div>
-                                            <div className={`border-t-[12px] border-b-4 border-black border-double py-6 mb-8 flex justify-between items-end ${isColor ? 'border-t-red-700 border-b-red-700' : ''}`}>
+                                            <div className={`border-t-[12px] border-b-4 border-black border-double py-6 mb-8 flex justify-between items-end col-span-all ${isColor ? 'border-t-red-700 border-b-red-700' : ''}`}>
                                                 <div className="flex flex-col">
                                                     <span className="text-black font-black text-xs md:text-sm tracking-[0.3em] mb-2 px-1 font-sans">
                                                         中華民國 {rocYear} 年 {month} 月 {day} 日
                                                     </span>
-                                                    <h1 className={`text-6xl md:text-7xl font-black tracking-tight leading-none ${isColor ? 'text-red-700' : 'text-black'}`} style={{ fontFamily: "'Noto Serif TC', serif" }}>
+                                                    <h1 className={`text-6xl md:text-7xl font-black tracking-tight leading-none whitespace-pre-wrap ${isColor ? 'text-red-700' : 'text-black'}`} style={{ fontFamily: "'Noto Serif TC', serif" }}>
                                                         {newspaperTitle}
                                                     </h1>
                                                 </div>
-                                                <div className={`text-right border-l-4 pl-4 pb-1 ${isColor ? 'border-red-700' : 'border-black'}`}>
+                                                <div className={`text-right border-l-4 pl-4 pb-1 shrink-0 ${isColor ? 'border-red-700' : 'border-black'}`}>
                                                     <p className="text-black font-black text-sm tracking-widest uppercase mb-1">{newspaperTaskLabel}</p>
                                                     <p className="text-black font-bold text-xs mb-3">走讀任務第一版</p>
                                                     <div className="h-8 w-24 flex gap-[2px] ml-auto">
@@ -721,16 +734,16 @@
                                                 </div>
                                             </div>
 
-                                            <div className={layoutClass}>
+                                            <div className="news-columns">
                                                 {articles.map((art, idx) => {
                                                     const stuPhotos = (art.studentPhotos || []).map((url, i) => ({ id: `stu_${i}`, url, selected: true }));
                                                     const teaPhotos = (recordPhotos[art.id] || []).filter(p => p.selected);
                                                     const photos = [...stuPhotos, ...teaPhotos];
-                                                    const isHeadline = idx === 0 && layoutIndex === 2;
 
                                                     const defaultTitle = `【${art.name || art.studentName}】的觀察紀錄`;
                                                     const currentTitle = articleOverrides[art.id]?.title ?? defaultTitle;
-                                                    const defaultTitleSize = isHeadline ? 'text-4xl' : 'text-2xl';
+                                                    const isSpanAll = articleOverrides[art.id]?.spanAll ?? (idx === 0);
+                                                    const defaultTitleSize = isSpanAll ? 'text-4xl' : 'text-2xl';
                                                     const currentTitleSize = articleOverrides[art.id]?.titleSize ?? defaultTitleSize;
 
                                                     const contentStr = art.content || art.essay || '';
@@ -741,59 +754,60 @@
                                                     }
 
                                                     return (
-                                                        <div key={art.id} className={`article-card bg-transparent border-b-2 border-black pb-6 relative ${isHeadline ? 'col-span-full border-b-4 border-black mb-8' : ''}`}>
+                                                        <div key={art.id} className={`article-card bg-transparent border-b-2 border-black pb-6 relative ${isSpanAll ? 'col-span-all border-b-4 border-black mb-8' : ''}`}>
                                                             
                                                             {/* 個別排版微調工具列 */}
-                                                            <div className="print:hidden bg-indigo-50 border border-indigo-100 rounded-lg p-2 mb-4 flex flex-wrap gap-2 items-center text-sm shadow-sm">
+                                                            <div className="print:hidden bg-indigo-50 border border-indigo-100 rounded-lg p-2 mb-4 flex flex-wrap gap-2 items-center text-sm shadow-sm opacity-50 hover:opacity-100 transition-opacity">
                                                                 <LucideIcon name="Settings" size={16} className="text-indigo-400" />
-                                                                <span className="font-bold text-indigo-700">個別排版微調:</span>
-                                                                <input type="text" value={currentTitle} onChange={e => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), title: e.target.value}}))} className="px-2 py-1 rounded border border-indigo-200 flex-grow max-w-[200px] outline-none focus:border-indigo-400" placeholder="自訂標題..." />
-                                                                <select value={currentTitleSize} onChange={e => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), titleSize: e.target.value}}))} className="px-2 py-1 rounded border border-indigo-200 outline-none focus:border-indigo-400 text-slate-600">
-                                                                    <option value="text-xl">字體: 小 (XL)</option>
-                                                                    <option value="text-2xl">字體: 中 (2XL)</option>
-                                                                    <option value="text-3xl">字體: 大 (3XL)</option>
-                                                                    <option value="text-4xl">字體: 特大 (4XL)</option>
-                                                                    <option value="text-5xl">字體: 超大 (5XL)</option>
-                                                                    <option value="text-6xl">字體: 巨霸 (6XL)</option>
+                                                                <input type="text" value={currentTitle} onChange={e => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), title: e.target.value}}))} className="px-2 py-1 rounded border border-indigo-200 flex-grow max-w-[150px] outline-none" placeholder="自訂標題..." />
+                                                                <select value={currentTitleSize} onChange={e => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), titleSize: e.target.value}}))} className="px-1 py-1 rounded border border-indigo-200 outline-none">
+                                                                    <option value="text-xl">XL</option><option value="text-2xl">2XL</option><option value="text-3xl">3XL</option><option value="text-4xl">4XL</option><option value="text-5xl">5XL</option><option value="text-6xl">6XL</option>
                                                                 </select>
+                                                                <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), spanAll: !isSpanAll}}))} className={`px-2 py-1 rounded font-bold ${isSpanAll ? 'bg-indigo-500 text-white' : 'bg-white text-indigo-500 border border-indigo-200'}`}>跨欄</button>
                                                             </div>
 
-                                                            <div className={`flex ${isHeadline ? 'flex-col md:flex-row-reverse gap-8' : 'flex-col gap-4'}`}>
+                                                            <div className={`flex ${isSpanAll ? 'flex-row-reverse gap-8' : 'flex-col gap-4'}`}>
                                                                 
-                                                                <div className={`shrink-0 ${isHeadline ? 'border-l-4 border-black pl-6 flex items-start' : 'border-b-2 border-black pb-2'}`}>
-                                                                    <h2 className={`font-black font-serif leading-tight ${isHeadline ? 'vertical-text max-h-96' : ''} ${currentTitleSize} ${isColor ? 'text-blue-900' : 'text-black'}`}>
+                                                                {/* 標題 (跨欄時使用直式排版) */}
+                                                                <div className={`shrink-0 ${isSpanAll ? 'border-l-4 border-black pl-6 flex items-start' : 'border-b-2 border-black pb-2'}`}>
+                                                                    <h2 className={`font-black font-serif leading-tight ${isSpanAll ? 'vertical-text max-h-96' : ''} ${currentTitleSize} ${isColor ? 'text-blue-900' : 'text-black'}`}>
                                                                         {currentTitle}
                                                                     </h2>
-                                                                    {isHeadline && <span className={`vertical-text text-2xl font-black mt-4 ${isColor ? 'text-red-600' : 'text-black'}`}>★ 特派記者</span>}
+                                                                    {isSpanAll && <span className={`vertical-text text-2xl font-black mt-4 ${isColor ? 'text-red-600' : 'text-black'}`}>★ 特派記者</span>}
                                                                 </div>
                                                                 
+                                                                {/* 內文與照片 */}
                                                                 <div className="flex-1">
-                                                                    {photos.length > 0 && (
-                                                                        <div className={`mb-5 flex gap-3 ${isHeadline ? '' : 'flex-wrap'}`}>
-                                                                            {photos.map(p => {
-                                                                                const defaultPhotoClass = isHeadline ? 'h-64 flex-grow' : 'h-40 flex-grow';
-                                                                                const currentPhotoClass = articleOverrides[art.id]?.photoSizes?.[p.id] ?? defaultPhotoClass;
+                                                                    {photos.map(p => {
+                                                                        const layout = articleOverrides[art.id]?.photoLayouts?.[p.id] ?? (isSpanAll ? 'left-lg' : 'full');
+                                                                        const layoutClasses = {
+                                                                            'full': 'w-full block mb-4',
+                                                                            'left-lg': 'w-1/2 float-left mr-4 mb-2',
+                                                                            'right-lg': 'w-1/2 float-right ml-4 mb-2',
+                                                                            'left-sm': 'w-1/3 float-left mr-4 mb-2',
+                                                                            'right-sm': 'w-1/3 float-right ml-4 mb-2',
+                                                                            'hidden': 'hidden'
+                                                                        };
 
-                                                                                return (
-                                                                                    <div key={p.id} className={`relative group ${currentPhotoClass} min-w-[120px]`}>
-                                                                                        <img src={p.url} className={`${!isColor ? 'grayscale contrast-125' : 'contrast-110 saturate-125'} object-cover border-2 border-black w-full h-full`}/>
-                                                                                        <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 print:hidden bg-white/95 p-1.5 rounded-lg shadow-lg border border-slate-200 z-10 flex flex-wrap gap-1 max-w-[140px] backdrop-blur-sm">
-                                                                                            <span className="w-full text-[10px] font-black text-slate-500 text-center mb-1">調整圖片尺寸</span>
-                                                                                            <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-32 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">小</button>
-                                                                                            <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-48 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">中</button>
-                                                                                            <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-64 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">大</button>
-                                                                                            <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-96 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold">特大</button>
-                                                                                            <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-auto w-full'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded w-full mt-1 font-bold">滿版</button>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                )
-                                                                            })}
-                                                                        </div>
-                                                                    )}
-                                                                    <p className={`font-bold leading-relaxed text-justify ${isHeadline ? 'text-lg' : 'text-sm'} ${isColor ? 'text-slate-900' : 'text-black'}`} style={{ fontFamily: "'Noto Serif TC', serif" }}>
+                                                                        return (
+                                                                            <div key={p.id} className={`relative group ${layoutClasses[layout]}`}>
+                                                                                <img src={p.url} className={`${!isColor ? 'grayscale contrast-125' : 'contrast-110 saturate-125'} object-cover border-2 border-black w-full h-auto`}/>
+                                                                                <div className="absolute top-1 left-1 opacity-0 group-hover:opacity-100 print:hidden bg-white/95 p-1 rounded-lg shadow-lg border border-slate-200 z-10 flex flex-wrap gap-1 w-40 backdrop-blur-sm">
+                                                                                    <span className="w-full text-[10px] font-black text-slate-500 text-center mb-1">文繞圖設定</span>
+                                                                                    <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'full'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1.5 py-1 rounded font-bold w-full">滿版</button>
+                                                                                    <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'left-lg'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1.5 py-1 rounded font-bold w-[48%]">左大圖</button>
+                                                                                    <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'right-lg'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1.5 py-1 rounded font-bold w-[48%]">右大圖</button>
+                                                                                    <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'left-sm'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1.5 py-1 rounded font-bold w-[48%]">左小圖</button>
+                                                                                    <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'right-sm'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1.5 py-1 rounded font-bold w-[48%]">右小圖</button>
+                                                                                    <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'hidden'}}}))} className="text-[10px] bg-red-50 text-red-500 hover:bg-red-100 px-1.5 py-1 rounded font-bold w-full mt-1">隱藏圖片</button>
+                                                                                </div>
+                                                                            </div>
+                                                                        )
+                                                                    })}
+                                                                    <p className={`font-bold leading-relaxed text-justify ${isSpanAll ? 'text-lg' : 'text-sm'} ${isColor ? 'text-slate-900' : 'text-black'}`} style={{ fontFamily: "'Noto Serif TC', serif" }}>
                                                                         {displayContent}
                                                                     </p>
-                                                                    <div className="mt-4 flex justify-end font-black text-[10px] uppercase tracking-widest font-sans">
+                                                                    <div className="mt-4 pt-2 flex justify-end font-black text-[10px] uppercase tracking-widest font-sans clear-both">
                                                                         <span className={`text-white px-2 py-0.5 ${isColor ? 'bg-red-700' : 'bg-black'}`}>#{art.name || art.studentName}</span>
                                                                     </div>
                                                                 </div>
