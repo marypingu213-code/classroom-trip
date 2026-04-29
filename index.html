@@ -41,7 +41,8 @@
             @page { size: A4 portrait; margin: 15mm; }
             body { background: white; padding: 0; margin: 0; } 
             .print\:hidden { display: none !important; } 
-            .print-exact { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            /* 強制列印出所有背景色與粗邊框，達到所見即所得 */
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
             .a4-paper-wrapper {
                 width: 100%;
                 min-height: auto;
@@ -73,7 +74,7 @@
         const { useState, useEffect, useRef } = React;
 
         // ==========================================
-        // Firebase 正式設定檔 (已匯入您的專案設定)
+        // Firebase 正式設定檔
         // ==========================================
         const MY_FIREBASE_CONFIG = {
             apiKey: "AIzaSyC3zxvUPk1BGS6kTmlaSCRoIQtrDxREXd8",
@@ -206,7 +207,9 @@
             const [layoutIndex, setLayoutIndex] = useState(0);
             const [themeStyle, setThemeStyle] = useState('retro-color'); // 'retro-color' | 'retro-bw' | 'modern'
             const [newspaperTitle, setNewspaperTitle] = useState('寶石鑑定日報');
-            const [articleOverrides, setArticleOverrides] = useState({}); // 儲存各別文章的標題與照片大小
+            const [newspaperDate, setNewspaperDate] = useState(new Date().toISOString().split('T')[0]);
+            const [newspaperTaskLabel, setNewspaperTaskLabel] = useState('TASK: ALL');
+            const [articleOverrides, setArticleOverrides] = useState({}); 
 
             // 老師編輯學生紀錄狀態
             const [editingRecordId, setEditingRecordId] = useState(null);
@@ -442,9 +445,15 @@
             const enterDashboard = () => {
                 if (!roomCodeInput.trim()) return alert("請輸入任務代碼");
                 setCurrentMission({ code: roomCodeInput }); 
+                setNewspaperTaskLabel(`TASK: ${roomCodeInput}`);
                 setView('teacher_dashboard');
             };
-            const enterDashboardAll = () => { setCurrentMission({ code: 'ALL', name: '所有紀錄' }); setView('teacher_dashboard'); };
+            
+            const enterDashboardAll = () => { 
+                setCurrentMission({ code: 'ALL', name: '所有紀錄' }); 
+                setNewspaperTaskLabel('TASK: ALL');
+                setView('teacher_dashboard'); 
+            };
 
             // 老師編輯邏輯
             const saveEdit = async (id) => {
@@ -461,21 +470,12 @@
                 setAllRecords(updated);
             };
 
-            // 新增：老師刪除邏輯
             const deleteRecord = async (id) => {
                 if (!window.confirm("確定要刪除這筆紀錄嗎？刪除後將無法恢復喔！")) return;
-                
                 if (dbInstance && !isOffline) {
-                    try { 
-                        await deleteDoc(doc(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'walk_records', id)); 
-                    } 
-                    catch (e) { 
-                        deleteLocalRecord(id); 
-                        setIsOffline(true); 
-                    }
-                } else { 
-                    deleteLocalRecord(id); 
-                }
+                    try { await deleteDoc(doc(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'walk_records', id)); } 
+                    catch (e) { deleteLocalRecord(id); setIsOffline(true); }
+                } else { deleteLocalRecord(id); }
             };
 
             const deleteLocalRecord = (id) => {
@@ -483,7 +483,7 @@
                 const updated = stored.filter(r => r.id !== id);
                 localStorage.setItem('walk_records', JSON.stringify(updated));
                 setAllRecords(updated);
-                setSelectedRecords(prev => prev.filter(selectedId => selectedId !== id)); // 同時取消選取
+                setSelectedRecords(prev => prev.filter(selectedId => selectedId !== id)); 
             };
 
             // ==========================================
@@ -564,7 +564,6 @@
                                         const stuPhotos = (rec.studentPhotos || []).map((url, i) => ({ id: `stu_${i}`, url, selected: true, isStudent: true }));
                                         const teaPhotos = recordPhotos[rec.id] || [];
                                         const mergedPhotos = [...stuPhotos, ...teaPhotos];
-                                        // 針對舊資料庫的兼容處理：若 content 不存在，則抓取 essay
                                         const textContent = rec.content || rec.essay || '';
 
                                         return (
@@ -647,6 +646,12 @@
                 const isRetro = themeStyle === 'retro-bw' || themeStyle === 'retro-color';
                 const isColor = themeStyle === 'retro-color';
 
+                // 準備顯示在報紙報頭的日期轉換 (西元轉民國)
+                const d = new Date(newspaperDate);
+                const rocYear = isNaN(d.getFullYear()) ? new Date().getFullYear() - 1911 : d.getFullYear() - 1911;
+                const month = isNaN(d.getMonth()) ? new Date().getMonth() + 1 : d.getMonth() + 1;
+                const day = isNaN(d.getDate()) ? new Date().getDate() : d.getDate();
+
                 return (
                     <div className="min-h-screen bg-stone-200 p-4 md:p-8 font-serif">
                         {/* 報紙編輯控制台 */}
@@ -662,12 +667,35 @@
                             <div className="flex flex-wrap items-center gap-6">
                                 {/* 編輯大標題 */}
                                 <div className="flex items-center gap-2 font-sans flex-grow min-w-[200px]">
-                                    <span className="text-sm font-bold text-slate-500">版面大標題：</span>
+                                    <span className="text-sm font-bold text-slate-500 whitespace-nowrap">版面大標題：</span>
                                     <input 
                                         type="text" 
                                         value={newspaperTitle} 
                                         onChange={e => setNewspaperTitle(e.target.value)}
                                         className="flex-grow bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 font-bold text-slate-700 focus:outline-none focus:ring-2 ring-indigo-200"
+                                    />
+                                </div>
+
+                                {/* 編輯日期 */}
+                                <div className="flex items-center gap-2 font-sans flex-grow min-w-[150px]">
+                                    <span className="text-sm font-bold text-slate-500 whitespace-nowrap">日期：</span>
+                                    <input 
+                                        type="date" 
+                                        value={newspaperDate} 
+                                        onChange={e => setNewspaperDate(e.target.value)}
+                                        className="flex-grow bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 font-bold text-slate-700 focus:outline-none focus:ring-2 ring-indigo-200"
+                                    />
+                                </div>
+
+                                {/* 編輯右上角標籤/總編輯 */}
+                                <div className="flex items-center gap-2 font-sans flex-grow min-w-[200px]">
+                                    <span className="text-sm font-bold text-slate-500 whitespace-nowrap">右上角標籤：</span>
+                                    <input 
+                                        type="text" 
+                                        value={newspaperTaskLabel} 
+                                        onChange={e => setNewspaperTaskLabel(e.target.value)}
+                                        className="flex-grow bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 font-bold text-slate-700 focus:outline-none focus:ring-2 ring-indigo-200"
+                                        placeholder="例: 總編輯: 某某某"
                                     />
                                 </div>
                                 
@@ -689,13 +717,13 @@
                         </div>
                         
                         {/* A4 實體報紙預覽容器 */}
-                        <div className="a4-paper-wrapper">
+                        <div className="a4-paper-wrapper print-exact">
                             {!isRetro ? (
                                 /* 現代風格電子報 */
                                 <div className="h-full">
                                     <div className="border-b-8 border-double border-indigo-900 text-center pb-8 mb-10">
                                         <h1 className="text-5xl font-black mb-4 tracking-wider text-indigo-900">{newspaperTitle}</h1>
-                                        <p className="text-lg text-slate-500 uppercase tracking-[0.3em] font-sans font-bold">Task: {currentMission?.code || 'N/A'} • {new Date().toLocaleDateString()}</p>
+                                        <p className="text-lg text-slate-500 uppercase tracking-[0.3em] font-sans font-bold">{newspaperTaskLabel} • {newspaperDate}</p>
                                     </div>
                                     <div className={`news-columns ${layoutIndex === 0 ? 'columns-1 md:columns-2' : layoutIndex === 1 ? 'flex flex-col' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3'}`}>
                                         {articles.map((art, idx) => {
@@ -771,7 +799,7 @@
                                                     <p className={`text-slate-700 leading-relaxed font-sans ${isFeatured ? 'text-lg' : 'text-sm'} whitespace-pre-wrap`}>{displayContent}</p>
                                                     
                                                     <div className="mt-5 pt-3 border-t border-slate-200 flex justify-end items-center italic text-xs text-slate-400 font-sans">
-                                                        <span>#{art.missionCode || 'FREE'}</span>
+                                                        <span>#{art.name || art.studentName}</span>
                                                     </div>
                                                 </div>
                                             );
@@ -785,14 +813,14 @@
                                     <div className={`border-t-[12px] border-b-4 border-black border-double py-6 mb-8 flex justify-between items-end ${isColor ? 'border-t-red-700 border-b-red-700' : ''}`}>
                                         <div className="flex flex-col">
                                             <span className="text-black font-black text-xs md:text-sm tracking-[0.3em] mb-2 px-1 font-sans">
-                                                中華民國 {new Date().getFullYear() - 1911} 年 {new Date().getMonth() + 1} 月 {new Date().getDate()} 日
+                                                中華民國 {rocYear} 年 {month} 月 {day} 日
                                             </span>
                                             <h1 className={`text-6xl md:text-7xl font-black tracking-tight leading-none ${isColor ? 'text-red-700' : 'text-black'}`} style={{ fontFamily: "'Noto Serif TC', serif" }}>
-                                                {newspaperTitle.split('').map((char, i) => <span key={i}>{char}{i === newspaperTitle.length/2 - 1 ? <br/> : ''}</span>)}
+                                                {newspaperTitle}
                                             </h1>
                                         </div>
                                         <div className={`text-right border-l-4 pl-4 pb-1 ${isColor ? 'border-red-700' : 'border-black'}`}>
-                                            <p className="text-black font-black text-sm tracking-widest uppercase mb-1">TASK: {currentMission?.code || 'FREE'}</p>
+                                            <p className="text-black font-black text-sm tracking-widest uppercase mb-1">{newspaperTaskLabel}</p>
                                             <p className="text-black font-bold text-xs mb-3">走讀任務第一版</p>
                                             {/* 復古條碼裝飾 */}
                                             <div className="h-8 w-24 flex gap-[2px] ml-auto">
@@ -890,7 +918,7 @@
                                                                 {displayContent}
                                                             </p>
                                                             <div className="mt-4 flex justify-end font-black text-[10px] uppercase tracking-widest font-sans">
-                                                                <span className={`text-white px-2 py-0.5 ${isColor ? 'bg-red-700' : 'bg-black'}`}>#{art.missionCode || 'FREE'}</span>
+                                                                <span className={`text-white px-2 py-0.5 ${isColor ? 'bg-red-700' : 'bg-black'}`}>#{art.name || art.studentName}</span>
                                                             </div>
                                                         </div>
 
