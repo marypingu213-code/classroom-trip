@@ -201,7 +201,7 @@
             const [recordPhotos, setRecordPhotos] = useState({});
             
             // 報紙專屬控制狀態
-            const [layoutIndex, setLayoutIndex] = useState(0); // 0:雙欄/四欄, 1:單欄/雙欄, 2:頭條放大
+            const [layoutIndex, setLayoutIndex] = useState(0); 
             const [themeStyle, setThemeStyle] = useState('retro-color'); 
             const [paperSize, setPaperSize] = useState('A4'); 
             const [newspaperTitle, setNewspaperTitle] = useState('寶石鑑定日報');
@@ -229,13 +229,12 @@
                 return () => unsubscribe();
             }, []);
 
-            // 資料監聽 (加入時間降冪排序)
+            // 資料監聽
             useEffect(() => {
                 if (dbInstance && user && !isOffline) {
                     const q = collection(dbInstance, 'artifacts', resolvedAppId, 'public', 'data', 'walk_records');
                     const unsubscribe = onSnapshot(q, (snapshot) => {
                         const recs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                        // 強制最新紀錄在最上方
                         recs.sort((a, b) => {
                             const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
                             const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -508,7 +507,6 @@
 
             // 老師管理端視圖
             if (view === 'teacher_dashboard') {
-                // 確保列出紀錄時，已經強制依據 createdAt 進行遞減排序 (由新到舊)
                 let taskRecords = currentMission?.code === 'ALL' 
                     ? [...allRecords] 
                     : allRecords.filter(r => r.missionCode === currentMission?.code || (!r.missionCode && currentMission?.code === 'FREE'));
@@ -539,7 +537,6 @@
                                                 <td className="p-4 text-center"><input type="checkbox" checked={selectedRecords.includes(rec.id)} onChange={e => e.target.checked ? setSelectedRecords([...selectedRecords, rec.id]) : setSelectedRecords(selectedRecords.filter(id => id !== rec.id))} className="w-5 h-5 accent-indigo-600 cursor-pointer rounded" /></td>
                                                 <td className="p-4"><p className="font-bold text-slate-800 text-lg">{rec.name || rec.studentName}</p><p className="text-[10px] text-slate-400 font-mono tracking-tighter">{rec.fileName}</p></td>
                                                 <td className="p-4">
-                                                    {/* 老師幫忙上傳照片與管理的功能 */}
                                                     <div className="flex gap-2 items-center flex-wrap">
                                                         {mergedPhotos.map(p => (
                                                             <div key={p.id} className="relative w-12 h-12 group cursor-pointer" title={p.isStudent ? "學生上傳" : "老師上傳"}>
@@ -600,7 +597,6 @@
                 const rocYear = d.getFullYear() - 1911;
                 const isColor = themeStyle === 'retro-color';
 
-                // 根據紙張大小決定格線佈局
                 let layoutClass = '';
                 if (layoutIndex === 0) layoutClass = paperSize === 'A3' ? 'grid grid-cols-4 gap-6' : 'grid grid-cols-2 gap-6';
                 if (layoutIndex === 1) layoutClass = paperSize === 'A3' ? 'grid grid-cols-2 gap-8' : 'flex flex-col gap-6';
@@ -608,7 +604,6 @@
 
                 return (
                     <div className="min-h-screen bg-stone-200 p-4 md:p-8 font-serif">
-                        {/* 動態注入列印樣式，強制印表機套用您選擇的紙張大小 */}
                         <style>
                             {`
                             @media print { 
@@ -617,7 +612,6 @@
                             `}
                         </style>
 
-                        {/* 報紙編輯控制台 */}
                         <div className="max-w-6xl mx-auto mb-8 print:hidden flex flex-col gap-4 bg-white/95 p-5 rounded-2xl backdrop-blur-sm shadow-md border border-white">
                             <div className="flex justify-between items-center flex-wrap gap-4 border-b border-slate-100 pb-4">
                                 <div className="flex items-center gap-3">
@@ -665,19 +659,17 @@
                             </div>
                         </div>
                         
-                        {/* 報紙預覽容器，加入 x 軸 scroll 讓 A3 大螢幕預覽更順暢 */}
                         <div className="w-full overflow-x-auto pb-12">
                             <div className={`paper-wrapper print-exact ${paperSize === 'A4' ? 'paper-a4' : 'paper-a3'}`}>
                                 
-                                {/* A3 專用的模擬摺線 (螢幕預覽用，列印時隱藏) */}
                                 {paperSize === 'A3' && (
                                     <div className="a3-fold-line absolute top-0 bottom-0 left-1/2 border-l-2 border-dashed border-slate-300 opacity-50 z-0 pointer-events-none"></div>
                                 )}
 
                                 <div className="relative z-10 h-full">
-                                    {themeStyle === 'modern' ? (
+                                    {!isRetro ? (
                                         /* 現代風格電子報 */
-                                        <div>
+                                        <div className="h-full">
                                             <div className="border-b-8 border-double border-indigo-900 text-center pb-8 mb-10 col-span-all">
                                                 <h1 className="text-5xl font-black mb-4 tracking-wider text-indigo-900 whitespace-pre-wrap leading-tight">{newspaperTitle}</h1>
                                                 <p className="text-lg text-slate-500 uppercase tracking-[0.3em] font-sans font-bold">{newspaperTaskLabel} • {newspaperDate}</p>
@@ -687,11 +679,11 @@
                                                     const stuPhotos = (art.studentPhotos || []).map((url, i) => ({ id: `stu_${i}`, url, selected: true }));
                                                     const teaPhotos = (recordPhotos[art.id] || []).filter(p => p.selected);
                                                     const photos = [...stuPhotos, ...teaPhotos];
+                                                    const isFeatured = layoutIndex === 2 && idx === 0;
 
                                                     const defaultTitle = `【${art.name || art.studentName}】的感官發現`;
                                                     const currentTitle = articleOverrides[art.id]?.title ?? defaultTitle;
-                                                    const isSpanAll = articleOverrides[art.id]?.spanAll ?? (layoutIndex === 2 && idx === 0);
-                                                    const defaultTitleSize = isSpanAll ? 'text-4xl' : 'text-2xl';
+                                                    const defaultTitleSize = isFeatured ? 'text-4xl' : 'text-2xl';
                                                     const currentTitleSize = articleOverrides[art.id]?.titleSize ?? defaultTitleSize;
 
                                                     const contentStr = art.content || art.essay || '';
@@ -702,42 +694,37 @@
                                                     }
 
                                                     return (
-                                                        <div key={art.id} className={`article-card p-6 bg-slate-50 border-t-4 border-indigo-500 shadow-sm relative ${isSpanAll ? 'col-span-full bg-white border-l-8 border-t-0 shadow-md' : ''}`}>
+                                                        <div key={art.id} className={`article-card p-6 bg-slate-50 border-t-4 border-indigo-500 shadow-sm relative ${isFeatured ? 'md:col-span-full bg-white border-l-8 border-t-0 shadow-md' : ''}`}>
                                                             
-                                                            {/* 個別排版微調工具列 */}
                                                             <div className="print:hidden bg-indigo-50 border border-indigo-100 rounded-lg p-2 mb-4 flex flex-wrap gap-2 items-center text-sm shadow-sm opacity-50 hover:opacity-100 transition-opacity">
                                                                 <LucideIcon name="Settings" size={16} className="text-indigo-400" />
                                                                 <input type="text" value={currentTitle} onChange={e => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), title: e.target.value}}))} className="px-2 py-1 rounded border border-indigo-200 flex-grow max-w-[150px] outline-none" placeholder="自訂標題..." />
                                                                 <select value={currentTitleSize} onChange={e => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), titleSize: e.target.value}}))} className="px-1 py-1 rounded border border-indigo-200 outline-none text-xs font-bold">
                                                                     <option value="text-xl">XL</option><option value="text-2xl">2XL</option><option value="text-3xl">3XL</option><option value="text-4xl">4XL</option><option value="text-5xl">5XL</option>
                                                                 </select>
-                                                                <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), spanAll: !isSpanAll}}))} className={`px-2 py-1 rounded text-xs font-bold ${isSpanAll ? 'bg-indigo-500 text-white' : 'bg-white text-indigo-500 border border-indigo-200'}`}>跨欄</button>
+                                                                <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), spanAll: !isFeatured}}))} className={`px-2 py-1 rounded text-xs font-bold ${isFeatured ? 'bg-indigo-500 text-white' : 'bg-white text-indigo-500 border border-indigo-200'}`}>跨欄</button>
                                                             </div>
 
                                                             <h3 className={`${currentTitleSize} font-black mb-4 leading-tight text-slate-800`}>{currentTitle}</h3>
                                                             
-                                                            {/* 圖片區域：支援文繞圖 */}
-                                                            {photos.map(p => {
-                                                                const layout = articleOverrides[art.id]?.photoLayouts?.[p.id] ?? (isSpanAll ? 'full' : 'full');
-                                                                const layoutClasses = {
-                                                                    'full': 'w-full block mb-4', 'left-lg': 'img-float-left w-1/2', 'right-lg': 'img-float-right w-1/2', 'left-sm': 'img-float-left w-1/3', 'right-sm': 'img-float-right w-1/3', 'hidden': 'hidden'
-                                                                };
-
-                                                                return (
-                                                                    <div key={p.id} className={`relative group ${layoutClasses[layout]}`}>
-                                                                        <img src={p.url} className="w-full h-auto object-cover rounded border border-slate-200 shadow-sm" />
-                                                                        <div className="absolute top-1 left-1 opacity-0 group-hover:opacity-100 print:hidden bg-white/95 p-1 rounded-lg shadow-lg border border-slate-200 z-10 flex flex-wrap gap-1 w-24 backdrop-blur-sm">
-                                                                            <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'full'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1 py-1 rounded font-bold w-full">滿版</button>
-                                                                            <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'left-lg'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1 py-1 rounded font-bold w-[48%]">左大</button>
-                                                                            <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'right-lg'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1 py-1 rounded font-bold w-[48%]">右大</button>
-                                                                            <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'left-sm'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1 py-1 rounded font-bold w-[48%]">左小</button>
-                                                                            <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'right-sm'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1 py-1 rounded font-bold w-[48%]">右小</button>
+                                                            {photos.length > 0 && <div className={`mb-5 flex gap-3 ${isFeatured ? 'justify-center' : 'flex-wrap'}`}>
+                                                                {photos.map(p => {
+                                                                    const defaultPhotoClass = isFeatured ? 'h-64 flex-grow' : 'h-40 flex-grow';
+                                                                    const currentPhotoClass = articleOverrides[art.id]?.photoSizes?.[p.id] ?? defaultPhotoClass;
+                                                                    return (
+                                                                        <div key={p.id} className={`relative group ${currentPhotoClass} min-w-[120px]`}>
+                                                                            <img src={p.url} className={`border border-slate-200 shadow-sm rounded object-cover w-full h-full`} />
+                                                                            <div className="absolute top-2 left-2 opacity-0 group-hover:opacity-100 print:hidden bg-white/95 p-1.5 rounded-lg shadow-lg border border-slate-200 z-10 flex flex-wrap gap-1 max-w-[140px] backdrop-blur-sm">
+                                                                                <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-32 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold w-full">滿版</button>
+                                                                                <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-48 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold w-[48%]">左大</button>
+                                                                                <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoSizes: {...((prev[art.id]||{}).photoSizes||{}), [p.id]: 'h-64 flex-grow'}}}))} className="text-xs bg-slate-100 hover:bg-indigo-100 text-slate-600 px-2 py-1 rounded font-bold w-[48%]">右大</button>
+                                                                            </div>
                                                                         </div>
-                                                                    </div>
-                                                                );
-                                                            })}
+                                                                    );
+                                                                })}
+                                                            </div>}
                                                             
-                                                            <p className={`text-slate-700 leading-relaxed font-sans ${isSpanAll ? 'text-lg' : 'text-sm'} whitespace-pre-wrap text-justify clear-none`}>{displayContent}</p>
+                                                            <p className={`text-slate-700 leading-relaxed font-sans ${isFeatured ? 'text-lg' : 'text-sm'} whitespace-pre-wrap text-justify clear-none`}>{displayContent}</p>
                                                             
                                                             <div className="mt-5 pt-3 border-t border-slate-200 flex justify-end items-center italic text-xs text-slate-400 font-sans clear-both"><span>#{art.name || art.studentName}</span></div>
                                                         </div>
@@ -811,14 +798,14 @@
                                                                         const layout = articleOverrides[art.id]?.photoLayouts?.[p.id] ?? 'full';
                                                                         const layoutClass = { 'full': 'w-full block mb-4', 'left-lg': 'img-float-left w-1/2', 'right-lg': 'img-float-right w-1/2', 'left-sm': 'img-float-left w-1/3', 'right-sm': 'img-float-right w-1/3', 'hidden': 'hidden' }[layout];
                                                                         return (
-                                                                            <div key={p.id} className={`relative group ${layoutClass}`}>
+                                                                            <div key={p.id} className={`relative group ${layoutClass} min-w-[120px]`}>
                                                                                 <img src={p.url} className={`${!isColor ? 'grayscale contrast-125' : 'contrast-110 saturate-125'} object-cover border-2 border-black w-full h-auto`}/>
-                                                                                <div className="absolute top-1 left-1 opacity-0 group-hover:opacity-100 print:hidden bg-white/95 p-1 rounded-md shadow-lg border border-slate-200 z-10 grid grid-cols-2 gap-1 w-24 backdrop-blur-sm">
+                                                                                <div className="absolute top-1 left-1 opacity-0 group-hover:opacity-100 print:hidden bg-white/95 p-1 rounded-lg shadow-lg border border-slate-200 z-10 flex flex-wrap gap-1 w-24 backdrop-blur-sm">
                                                                                     <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'full'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1 py-1 rounded font-bold w-full col-span-2">滿版</button>
-                                                                                    <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'left-lg'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1 py-1 rounded font-bold">左大</button>
-                                                                                    <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'right-lg'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1 py-1 rounded font-bold">右大</button>
-                                                                                    <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'left-sm'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1 py-1 rounded font-bold">左小</button>
-                                                                                    <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'right-sm'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1 py-1 rounded font-bold">右小</button>
+                                                                                    <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'left-lg'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1 py-1 rounded font-bold w-[48%]">左大</button>
+                                                                                    <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'right-lg'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1 py-1 rounded font-bold w-[48%]">右大</button>
+                                                                                    <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'left-sm'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1 py-1 rounded font-bold w-[48%]">左小</button>
+                                                                                    <button onClick={() => setArticleOverrides(prev => ({...prev, [art.id]: {...(prev[art.id]||{}), photoLayouts: {...((prev[art.id]||{}).photoLayouts||{}), [p.id]: 'right-sm'}}}))} className="text-[10px] bg-slate-100 hover:bg-indigo-100 px-1 py-1 rounded font-bold w-[48%]">右小</button>
                                                                                 </div>
                                                                             </div>
                                                                         )
@@ -846,8 +833,8 @@
 
             // 輔助視圖
             if (view === 'teacher_create') return <TeacherCreateView setView={setView} missionSetup={missionSetup} setMissionSetup={setMissionSetup} processAI={processAI} isProcessingAI={isProcessingAI} createMission={createMission} />;
-            if (view === 'student_join') return <StudentJoinView setView={setView} roomCodeInput={roomCodeInput} setRoomCodeInput={setRoomCodeInput} joinMission={joinMission} studentName={studentName} setStudentName={setStudentName} />;
-            if (view === 'teacher_login') return <TeacherLoginView setView={setView} roomCodeInput={roomCodeInput} setRoomCodeInput={setRoomCodeInput} enterDashboard={enterDashboard} />;
+            if (view === 'student_join') return <StudentJoinView setView={setView} roomCodeInput={roomCodeInput} setRoomCodeInput={setRoomCodeInput} joinMission={joinMission} joinFreeExplore={joinFreeExplore} />;
+            if (view === 'teacher_login') return <TeacherLoginView setView={setView} roomCodeInput={roomCodeInput} setRoomCodeInput={setRoomCodeInput} enterDashboard={enterDashboard} enterDashboardAll={enterDashboardAll} />;
             
             return null;
         }
@@ -881,7 +868,7 @@
             </div>
         );
 
-        const StudentJoinView = ({ setView, roomCodeInput, setRoomCodeInput, joinMission, studentName, setStudentName }) => (
+        const StudentJoinView = ({ setView, roomCodeInput, setRoomCodeInput, joinMission, joinFreeExplore }) => (
             <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-indigo-600">
                 <button onClick={() => setView('home')} className="absolute top-6 left-6 text-white/70 hover:text-white font-bold flex items-center transition-colors"><LucideIcon name="ArrowLeft" className="mr-2"/> 返回</button>
                 <div className="bg-white p-10 rounded-[2rem] shadow-2xl w-full max-w-md text-center">
@@ -889,12 +876,13 @@
                     <h2 className="text-3xl font-black text-slate-800 mb-2">加入任務</h2>
                     <p className="text-slate-500 mb-8">請輸入老師給您的任務代碼</p>
                     <input type="text" value={roomCodeInput} onChange={e=>setRoomCodeInput(e.target.value.toUpperCase())} placeholder="任務代碼" className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-5 text-center text-3xl font-black text-indigo-600 mb-4 uppercase tracking-widest focus:border-indigo-500 outline-none transition-colors" />
-                    <button onClick={joinMission} className="w-full bg-slate-800 text-white py-5 rounded-2xl font-black text-xl hover:bg-slate-900 shadow-xl transition-transform active:scale-95">進入教室</button>
+                    <button onClick={joinMission} className="w-full bg-slate-800 text-white py-5 rounded-2xl font-black text-xl hover:bg-slate-900 shadow-xl transition-transform active:scale-95 mb-4">進入教室</button>
+                    <button onClick={joinFreeExplore} className="w-full bg-white text-indigo-600 border-2 border-indigo-100 py-4 rounded-2xl font-black text-lg hover:bg-indigo-50 transition-colors">🚀 免代碼直接進入 (自由探索)</button>
                 </div>
             </div>
         );
 
-        const TeacherLoginView = ({ setView, roomCodeInput, setRoomCodeInput, enterDashboard }) => (
+        const TeacherLoginView = ({ setView, roomCodeInput, setRoomCodeInput, enterDashboard, enterDashboardAll }) => (
             <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-amber-50">
                 <button onClick={() => setView('home')} className="absolute top-6 left-6 text-amber-800/60 hover:text-amber-800 font-bold flex items-center transition-colors"><LucideIcon name="ArrowLeft" className="mr-2"/> 返回</button>
                 <div className="bg-white p-10 rounded-[2rem] shadow-xl w-full max-w-md text-center border border-amber-100">
@@ -902,7 +890,8 @@
                     <h2 className="text-3xl font-black text-slate-800 mb-2">進入老師後台</h2>
                     <p className="text-slate-500 mb-8">請輸入您開課時的任務代碼</p>
                     <input type="text" value={roomCodeInput} onChange={e=>setRoomCodeInput(e.target.value.toUpperCase())} placeholder="任務代碼" className="w-full bg-slate-50 border-2 border-slate-200 rounded-2xl p-5 text-center text-3xl font-black text-amber-600 mb-6 uppercase tracking-widest focus:border-amber-500 outline-none transition-colors" />
-                    <button onClick={enterDashboard} className="w-full bg-amber-500 text-white py-5 rounded-2xl font-black text-xl hover:bg-amber-600 shadow-xl transition-transform active:scale-95">查看學生成果</button>
+                    <button onClick={enterDashboard} className="w-full bg-amber-500 text-white py-5 rounded-2xl font-black text-xl hover:bg-amber-600 shadow-xl transition-transform active:scale-95 mb-4">查看單一任務成果</button>
+                    <button onClick={enterDashboardAll} className="w-full bg-white text-slate-600 border-2 border-slate-200 py-4 rounded-2xl font-black text-lg hover:bg-slate-50 transition-colors">🔍 檢視所有歷史紀錄 (免代碼)</button>
                 </div>
             </div>
         );
